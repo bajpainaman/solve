@@ -258,7 +258,8 @@ fi
 # ---------- step 6: smoke test ----------
 step "6/7 smoke tests"
 [ -f "$DEST/SKILL.md" ]                    && ok "SKILL.md present"          || fail "SKILL.md missing"
-[ "$(ls "$DEST/frameworks" | wc -l | tr -d ' ')" = "25" ] && ok "25 framework files" || warn "framework count != 25"
+_FRAMEWORK_COUNT=$(find "$DEST/frameworks" -maxdepth 1 -name '*.md' -not -name '_TEMPLATE.md' 2>/dev/null | wc -l | tr -d ' ')
+[ "$_FRAMEWORK_COUNT" = "25" ] && ok "25 framework files" || warn "framework count = $_FRAMEWORK_COUNT (expected 25)"
 for b in parallel-research parallel-setup state-rw cost-track render-report; do
   [ -x "$DEST/bin/$b" ] && ok "bin/$b executable" || fail "bin/$b missing or not executable"
 done

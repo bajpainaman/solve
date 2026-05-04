@@ -33,7 +33,7 @@ if [ ! -d "$SKILL" ] && [ "${1:-}" != "--update" ]; then
 fi
 
 case "${1:-}" in
-  --update)
+  update|up|--update|-u)
     if [ -d "$SKILL" ] && [ -L "$SKILL" ]; then
       SRC=$(readlink "$SKILL")
     elif [ -d "$SKILL" ]; then
@@ -47,7 +47,7 @@ case "${1:-}" in
     echo "Re-running remote installer..."
     exec bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/main/install)
     ;;
-  --uninstall)
+  uninstall|remove|--uninstall)
     set +e
     if [ -L "$SKILL" ] || [ -d "$SKILL" ]; then
       rm -rf "$SKILL"
@@ -72,6 +72,28 @@ PY
       fi
     done
     echo "Uninstalled. Note: ~/.gstack/parallel-api-key and ~/.claude/settings.json env left intact."
+    exit 0
+    ;;
+  status|--status|version|--version|-V)
+    SKILL_VER=$(grep -E '^version:' "$SKILL/SKILL.md" 2>/dev/null | head -1 | awk '{print $2}')
+    echo "solve CLI shim:   $0"
+    echo "skill location:   $SKILL"
+    if [ -L "$SKILL" ]; then echo "skill source:     $(readlink "$SKILL")"; fi
+    echo "skill version:    ${SKILL_VER:-unknown}"
+    echo "claude version:   $(claude --version 2>/dev/null | head -1)"
+    if [ -n "${PARALLEL_API_KEY:-}" ] || [ -s "$HOME/.gstack/parallel-api-key" ]; then
+      echo "parallel.ai key:  configured"
+    else
+      echo "parallel.ai key:  not configured (run $SKILL/bin/parallel-setup)"
+    fi
+    if [ "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" = "1" ]; then
+      echo "agent-teams flag: enabled in shell env"
+    elif [ -f "$HOME/.claude/settings.json" ] && \
+         python3 -c "import json,sys;d=json.load(open('$HOME/.claude/settings.json'));sys.exit(0 if d.get('env',{}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS')=='1' else 1)" 2>/dev/null; then
+      echo "agent-teams flag: enabled in settings.json"
+    else
+      echo "agent-teams flag: NOT enabled (run solve --update)"
+    fi
     exit 0
     ;;
 esac

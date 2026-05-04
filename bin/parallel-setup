@@ -102,15 +102,19 @@ set_key_flow() {
   local trimmed
   trimmed=$(printf '%s' "$key" | tr -d '[:space:]')
   if [ -z "$trimmed" ]; then
-    echo "ERROR: empty key" >&2
+    echo "ERROR: empty key (nothing was captured at the silent prompt)" >&2
+    echo "Try one of:" >&2
+    echo "  pbpaste | $0 --stdin" >&2
+    echo "  $0 --key 'YOUR_KEY'" >&2
     exit 2
   fi
-  case "$trimmed" in
-    sk-*|pk-*) ;;
-    *) echo "WARN: key does not start with 'sk-' or 'pk-' (continuing anyway)" >&2 ;;
-  esac
+  if [ ${#trimmed} -lt 16 ]; then
+    echo "ERROR: key looks too short (${#trimmed} chars). Real Parallel.ai keys are 30+ chars." >&2
+    echo "Got: $(mask "$trimmed")" >&2
+    exit 2
+  fi
 
-  echo "Validating key with Parallel.ai..."
+  echo "Validating key with Parallel.ai... (key preview: $(mask "$trimmed"))"
   if probe "$trimmed"; then
     store "$trimmed"
     echo "STORED: $KEY_FILE (mode 600)"
@@ -123,7 +127,10 @@ set_key_flow() {
     echo "  - network blocked (corp proxy, offline)"
     echo "  - Parallel.ai is down or rate-limiting"
     echo ""
-    read -r -p "Store anyway? [y/N] " yn
+    echo "Key in buffer: $(mask "$trimmed") (${#trimmed} chars)"
+    echo "Type 'y' to store anyway, or anything else to abort."
+    echo "Do NOT paste the key again here; it goes to a yes/no prompt."
+    read -r -p "Store unverified? [y/N] " yn
     case "$yn" in
       y|Y|yes|YES)
         store "$trimmed"
@@ -131,7 +138,7 @@ set_key_flow() {
         echo "Re-run '$0 --check' once you can reach the API."
         ;;
       *)
-        echo "ABORTED. Key not stored."
+        echo "ABORTED. Key not stored. (You typed: $(mask "$yn"))"
         exit 3
         ;;
     esac
@@ -139,6 +146,19 @@ set_key_flow() {
 }
 
 cmd_interactive() {
+  # Refuse to run interactive mode without a real TTY. This prevents the
+  # silent paste prompt from collapsing under `bash <(curl ...)` flows
+  # where stdin is the script body, not the keyboard.
+  if [ ! -t 0 ] || [ ! -t 1 ]; then
+    echo "ERROR: parallel-setup interactive mode requires a real TTY." >&2
+    echo "" >&2
+    echo "Run one of these from your terminal directly:" >&2
+    echo "  $0                          # silent paste (this command)" >&2
+    echo "  $0 --key 'sk-...'           # one-shot from arg" >&2
+    echo "  pbpaste | $0 --stdin        # pipe from clipboard" >&2
+    exit 2
+  fi
+
   cat <<'EOF'
 Parallel.ai API key setup
 
@@ -148,14 +168,10 @@ Paste it below. Input is hidden. Press Enter to submit, Ctrl+C to abort.
 EOF
   printf 'Key: '
   local key
-  if [ -t 0 ]; then
-    stty -echo
-    IFS= read -r key
-    stty echo
-    printf '\n'
-  else
-    IFS= read -r key
-  fi
+  stty -echo
+  IFS= read -r key
+  stty echo
+  printf '\n'
   set_key_flow "$key"
 }
 
