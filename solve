@@ -76,6 +76,12 @@ PY
     ;;
 esac
 
+# Force agent-teams flag for the spawned claude process. The skill requires it,
+# and inheriting from settings.json alone leaves a window where an already-
+# running shell (which never sourced the rc) misses it. Setting it here
+# guarantees /solve sees it no matter how the user got to this shim.
+export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+
 if [ $# -eq 0 ]; then
   exec claude "/solve"
 else

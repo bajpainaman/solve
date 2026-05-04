@@ -131,25 +131,48 @@ else
   fail "$SRC/solve not found (skipping shim install)"
 fi
 
-# Ensure ~/.local/bin is on PATH for current and future shells
-case ":$PATH:" in
-  *":$SHIM_DIR:"*) ok "$SHIM_DIR already on PATH" ;;
-  *)
-    warn "$SHIM_DIR not on PATH for this shell"
-    for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
-      [ -f "$rc" ] || continue
-      if ! grep -q '# solve-cli >>>' "$rc" 2>/dev/null; then
-        {
-          printf '\n# solve-cli >>>\n'
-          printf 'export PATH="$HOME/.local/bin:$PATH"\n'
-          printf '# solve-cli <<<\n'
-        } >> "$rc"
-        ok "added PATH export to $rc"
-      fi
-    done
-    log "  ${C_DIM}restart your shell or run: source ~/.zshrc${C_RESET}"
-    ;;
-esac
+# Ensure ~/.local/bin is on PATH AND the agent-teams flag is in shell env, for
+# both current and future shells. Wrapped in a single marked block so
+# `solve --uninstall` can clean it up later.
+NEED_PATH=1
+NEED_FLAG=1
+case ":$PATH:" in *":$SHIM_DIR:"*) NEED_PATH=0 ;; esac
+[ "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" = "1" ] && NEED_FLAG=0
+
+if [ "$NEED_PATH" = "0" ]; then ok "$SHIM_DIR already on PATH"; fi
+if [ "$NEED_FLAG" = "0" ]; then ok "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 already in shell env"; fi
+
+# Always write a fresh marked block to all detected rc files (idempotent: we
+# remove any prior block first). This way users don't end up with a half-
+# updated shim if we change the block content across versions.
+RC_TARGETS=()
+for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+  [ -f "$rc" ] && RC_TARGETS+=("$rc")
+done
+
+for rc in "${RC_TARGETS[@]}"; do
+  if grep -q '# solve-cli >>>' "$rc" 2>/dev/null; then
+    python3 - "$rc" <<'PY'
+import sys, re
+p = sys.argv[1]
+with open(p) as f: s = f.read()
+s = re.sub(r'\n?# solve-cli >>>.*?# solve-cli <<<\n?', '\n', s, flags=re.DOTALL)
+with open(p, 'w') as f: f.write(s)
+PY
+  fi
+  {
+    printf '\n# solve-cli >>>\n'
+    printf 'export PATH="$HOME/.local/bin:$PATH"\n'
+    printf 'export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n'
+    printf '# solve-cli <<<\n'
+  } >> "$rc"
+  ok "wrote solve-cli block to $rc"
+done
+
+if [ "$NEED_PATH" = "1" ] || [ "$NEED_FLAG" = "1" ]; then
+  log "  ${C_DIM}for this terminal, source the rc:  source ~/.zshrc${C_RESET}"
+  log "  ${C_DIM}new terminals get it automatically${C_RESET}"
+fi
 
 # ---------- step 4: enable agent teams flag ----------
 step "4/7 enable agent teams in ~/.claude/settings.json"
