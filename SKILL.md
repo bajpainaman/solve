@@ -1,14 +1,18 @@
 ---
 name: solve
-version: 0.3.1
+version: 0.4.0
 description: |
-  Strategic problem solver. Orchestrates an agent team across 25 untools.co frameworks in
-  3 phases (define, systems, decide). Lead spawns long-lived teammates (researcher, definer,
-  systems-thinker, decider, adversary) plus 6 just-in-time Six-Hats teammates in Phase 3.
-  Layered web research (Parallel.ai → WebSearch → gstack browse). Continuous adversary
-  challenges every framework output. Produces .context/solve-<slug>.md with recommendation +
-  0-10 rubric + Bayesian posterior + HIGH/MED/LOW bucket + dissent + Minto synthesis. Auto-
-  handoffs mid-run to /investigate, /office-hours, /plan-eng-review when triggers fire.
+  Strategic problem solver. FIRST runs a regime classifier (Step 0.5) that routes the
+  question: knowledge → answer inline, bug → /investigate, idea → /office-hours, decision
+  → full agent-team workflow. For decisions only, orchestrates an agent team across 25
+  untools.co frameworks in 3 phases (define, systems, decide). Lead spawns long-lived
+  teammates (researcher, definer, systems-thinker, decider, adversary) plus 6 just-in-time
+  Six-Hats teammates in Phase 3. Layered web research (Parallel.ai → WebSearch → gstack
+  browse). Continuous adversary challenges every framework output. Produces
+  .context/solve-<slug>.md with recommendation + 0-10 rubric + Bayesian posterior +
+  HIGH/MED/LOW bucket + dissent + Minto synthesis. Auto-handoffs mid-run to /investigate,
+  /office-hours, /plan-eng-review when triggers fire. Hard kickoff gate: TeamCreate is
+  the first tool call for decisions; inline framework work is forbidden.
 allowed-tools:
   - Bash
   - Read
@@ -156,6 +160,75 @@ If `SPAWNED_SESSION=true`, the skill is running inside another orchestrator (Ope
 - Do NOT use AskUserQuestion. Auto-choose recommended options.
 - Skip Lake Intro, telemetry consent, routing-rules prompt, and Context Recovery prompts.
 - Focus on completing the task and reporting via prose output.
+
+---
+
+## Step 0.5 — Regime Classification (MANDATORY GATE)
+
+**This step gates everything else.** /solve is heavyweight: 5 long-lived teammates + 6 just-in-time hat teammates + 25 frameworks + parallel research. That investment is correct for **strategic decisions** and badly miscalibrated for everything else. This step routes the question to the right shape.
+
+### The classifier
+
+AskUserQuestion (skip if `SPAWNED_SESSION=true`; auto-choose `decision` in that case):
+
+> Before /solve runs the full workflow, what shape is this question?
+>
+> - **A) Strategic decision** — I'm picking between options, committing to a path, deciding whether to build/migrate/launch X. There's a commitment at the end.
+> - **B) Knowledge / research** — I want to understand X, learn about Y, get a synthesis of a topic. There's no specific commit at the end.
+> - **C) Bug / incident** — something is broken, I need root cause and a fix.
+> - **D) Pre-product idea** — I have an idea that doesn't exist yet, want to think it through before building.
+
+Persist the regime to `state.json::regime` via `bin/state-rw write`.
+
+### Branch behavior (NON-NEGOTIABLE)
+
+#### A) Strategic decision
+- Continue to Step 1.
+- **The lead's next tool call after Step 1's preamble MUST be `TeamCreate`.** No reading framework spec files first. No inline framework writing. The team is mandatory.
+- Proceed through Steps 1-16 normally.
+
+#### B) Knowledge / research
+- Do NOT spawn the team. Do NOT call TeamCreate.
+- Acknowledge the misfit: "This looks like a knowledge question, not a strategic decision. /solve's full 25-framework workflow is overkill here."
+- Offer two paths:
+  1. Answer the question directly using available research tools (WebSearch, parallel-research, browse). One-turn synthesis. No team. No frameworks.
+  2. Convert to a decision: "If you'd like to turn this into a /solve decision (e.g. 'should we build X to address this?'), restate as a commitment question."
+- If user picks (1): produce a focused 1-2 page synthesis. Cite sources. End.
+- If user picks (2): re-run Step 0.5 with the new framing.
+- Either way: do NOT continue to Steps 1-16. Skip telemetry's "completed" event; log as `outcome: redirected`.
+
+#### C) Bug / incident
+- Do NOT spawn the team.
+- Invoke `/investigate` via the Skill tool with the problem statement as context.
+- /investigate is purpose-built for root cause; /solve would re-derive the same answer with 10x the cost.
+- Log: `outcome: handoff_investigate`. Exit.
+
+#### D) Pre-product idea
+- Do NOT spawn the team.
+- Invoke `/office-hours` via the Skill tool with the problem statement as context.
+- /office-hours is the YC-style brainstorming workflow; /solve's 5-question intake assumes a real problem with stakeholders, which a pre-product idea doesn't have yet.
+- Log: `outcome: handoff_office_hours`. Exit.
+
+### Why this gate exists
+
+Without Step 0.5, the lead can interpret /solve's "must run as agent-teams" as soft guidance and decide that 25 frameworks is overkill for a knowledge question. The lead then runs inline (subagents instead of TeamCreate), produces a synthesis, and the user gets neither the full /solve workflow nor a clean handoff. This step removes the ambiguity: by the end of Step 0.5, the workflow is either (a) committed to a full team run, (b) producing a knowledge synthesis directly, or (c) handed off to a more-fit skill.
+
+### Kickoff guard (only applies if regime = decision)
+
+After Step 0.5 confirms `regime = decision`, the lead is bound by a **kickoff guard**:
+
+- **Forbidden**: reading any `frameworks/<name>.md` file in the lead's own context
+- **Forbidden**: writing any `$RUN_DIR/frameworks/<name>.md` file directly
+- **Forbidden**: spawning subagents via the Agent tool for framework execution (subagents can't message peers; the team needs peer messaging)
+- **Required**: the lead's next tool call after preamble (Step 1) and intake (Steps 4-5) is `TeamCreate`. Period.
+
+If the lead finds itself reading a framework spec file or writing framework analysis directly, that's a kickoff-guard violation. Halt, restart the workflow at Step 6 (Create the Team), spawn the team, delegate to teammates.
+
+### Confidence rubric impact
+
+- Step 0.5 ran and `regime = decision` confirmed: +0 (baseline; expected behavior)
+- Step 0.5 ran and `regime = knowledge|bug|idea` (handoff or redirect): N/A (rubric doesn't apply; /solve didn't run)
+- Step 0.5 was skipped (SPAWNED_SESSION + auto-decision): +0 (baseline; trust orchestrator)
 
 ---
 
@@ -348,13 +421,30 @@ Same wrapping. AskUserQuestion: pyramid / build-up / tldr (or auto if SPAWNED). 
 
 ---
 
-## Step 6 — Create the Team
+## Step 6 — Create the Team (KICKOFF GATE)
+
+**This is the kickoff gate.** If you (the lead) reached Step 6 with `regime = decision` from Step 0.5, your **next tool call MUST be TeamCreate**. No reading framework files. No writing inline framework analysis. No spawning subagents for framework work. TeamCreate first, everything else after.
 
 ```text
 TeamCreate(team_name="$TEAM_NAME", description="Solve: $PROBLEM_REFINED")
 ```
 
 Team file: `~/.claude/teams/$TEAM_NAME/config.json`. Shared task list: `~/.claude/tasks/$TEAM_NAME/`.
+
+### Kickoff-guard violations (and how to recover)
+
+If you find yourself doing any of these BEFORE calling TeamCreate, you've violated the kickoff guard:
+
+1. Reading `~/.claude/skills/solve/frameworks/<name>.md` in your own context
+2. Writing `$RUN_DIR/frameworks/<name>.md` directly with the Write tool
+3. Spawning Agent subagents (without `team_name`) for framework work
+4. Producing inline analysis like "let me apply Cynefin..." or "the iceberg layers are..."
+
+**Recovery:** halt the violating action immediately. State: "I violated the kickoff guard; restarting at TeamCreate." Then call TeamCreate. Any work you did inline is discarded; teammates redo it. The reason: each teammate runs in its own context window, which is the architectural value of agent teams (peers can disagree, adversary can attack, hats can roleplay independently). Inline work loses this.
+
+### Why TeamCreate first
+
+The skill's value is **adversarial-by-construction reasoning**. Six Hats only works because the 6 hats spawn in parallel, isolated. The continuous adversary only works because it's a separate teammate watching the framework directory. Definer→researcher peer messaging only works because they share a task list. None of this can be simulated by inline analysis from one agent.
 
 If `_CHECKPOINT_MODE=continuous`, the lead and each teammate make WIP commits at logical boundaries (see Continuous Checkpoint Mode section below).
 
