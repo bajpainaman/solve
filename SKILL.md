@@ -1,6 +1,6 @@
 ---
 name: solve
-version: 0.5.0
+version: 0.5.1
 description: |
   Strategic problem solver. FIRST runs a regime classifier (Step 0.5) that routes the
   question: knowledge → answer inline, bug → /investigate, idea → /office-hours, decision
@@ -874,6 +874,24 @@ Between framework boundaries, lead also runs:
 ```
 
 Exit 1 (warned at 80%): SendMessage to all teammates to wrap up. Exit 2 (halted): trigger halt protocol from Step 0.6.
+
+### Lead progress display (NEW IN v0.5.1)
+
+Between framework boundaries, lead prints the current progress snapshot:
+
+```bash
+~/.claude/skills/solve/bin/progress --run-dir "$RUN_DIR"
+```
+
+This produces a 3-phase Unicode-bar block showing per-phase completion, adversary max score, budget burn, and the latest framework written. The user sees this in the conversation as a tool-call result, giving them live visibility into where the run is.
+
+For terse prompts (`EXPLAIN_LEVEL=terse`), use `--plain` instead, which prints `[N/25] current-framework` on a single line.
+
+Display rules:
+- Print at the START of each phase (before any framework in that phase runs)
+- Print after each framework completes
+- Print at HALT (budget overrun or cap violation) for context
+- Print FINAL snapshot before report rendering (Step 12)
 
 ---
 

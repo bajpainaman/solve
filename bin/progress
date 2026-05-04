@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+# progress — render a multi-phase progress bar for /solve runs
+#
+# Usage:
+#   progress                     read $RUN_DIR (env), print one snapshot
+#   progress --run-dir DIR       explicit run dir
+#   progress --watch             repaint every 2s until Ctrl-C
+#   progress --width N           total bar width in chars (default 30)
+#   progress --no-color          disable ANSI colors
+#   progress --plain             single-line "[N/25] current-framework"
+#
+# Renders to stdout. Reads:
+#   $RUN_DIR/frameworks/*.md      to count completed frameworks per phase
+#   $RUN_DIR/state.json::budget_status  for cost + time burn
+#   $RUN_DIR/adversary.jsonl      for max adversary score
+#   $RUN_DIR/state.json::regime   to skip if not decision
+#
+# Output (default):
+#   ═══ /solve: <slug> ═══════════════════════════════════════════
+#   Phase 1 (Define)   [████████████████████] 8/8   ✓
+#   Phase 2 (Systems)  [████████░░░░░░░░░░░░] 2/5   running
+#   Phase 3 (Decide)   [░░░░░░░░░░░░░░░░░░░░] 0/12  pending
+#   ─────────────────────────────────────────────────────────────
+#   Adversary max:  4/10 (low)         Budget time:  4m / 15m
+#   Cost:           $0.84 / $5.00      Verdict:      under_cap
+#   Latest:         iceberg
+
+set -euo pipefail
+
+RUN_DIR="${RUN_DIR:-${SOLVE_RUN_DIR:-}}"
+WIDTH=20
+USE_COLOR=1
+WATCH=0
+PLAIN=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --run-dir)   RUN_DIR="$2"; shift 2 ;;
+    --width)     WIDTH="$2"; shift 2 ;;
+    --no-color)  USE_COLOR=0; shift ;;
+    --watch)     WATCH=1; shift ;;
+    --plain)     PLAIN=1; shift ;;
+    -h|--help)   sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *)           echo "ERROR: unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+[ -t 1 ] || USE_COLOR=0
+
+if [ "$USE_COLOR" = "1" ]; then
+  C_BOLD=$(printf '\033[1m'); C_DIM=$(printf '\033[2m')
+  C_GREEN=$(printf '\033[32m'); C_YELLOW=$(printf '\033[33m')
+  C_RED=$(printf '\033[31m'); C_CYAN=$(printf '\033[36m')
+  C_RESET=$(printf '\033[0m')
+else
+  C_BOLD=""; C_DIM=""; C_GREEN=""; C_YELLOW=""; C_RED=""; C_CYAN=""; C_RESET=""
+fi
+
+# Phase definitions (same as SKILL.md)
+DEFINE_FW="abstraction-ladder first-principles issue-tree ishikawa inversion-define zwicky-box conflict-resolution-diagram productive-thinking"
+SYSTEMS_FW="iceberg connection-circles concept-map balancing-loop reinforcing-loop"
+DECIDE_FW="cynefin eisenhower impact-effort decision-matrix second-order ladder-of-inference ooda-loop hard-choice confidence-speed-quality sbi six-hats minto"
+
+count_done() {
+  local fw_list="$1"
+  local count=0
+  for fw in $fw_list; do
+    [ -s "$RUN_DIR/frameworks/$fw.md" ] && count=$((count + 1))
+  done
+  echo "$count"
+}
+
+bar() {
+  local done=$1 total=$2 width=$3
+  local pct=$(( total == 0 ? 0 : (done * width) / total ))
+  local color
+  if [ "$done" = "$total" ]; then color="$C_GREEN"
+  elif [ "$pct" -gt 0 ]; then color="$C_CYAN"
+  else color="$C_DIM"; fi
+  printf "%s" "$color"
+  for ((i=0; i<pct; i++)); do printf "█"; done
+  printf "%s" "$C_DIM"
+  for ((i=pct; i<width; i++)); do printf "░"; done
+  printf "%s" "$C_RESET"
+}
+
+format_seconds() {
+  local s=$1
+  if [ "$s" -lt 60 ]; then echo "${s}s"
+  elif [ "$s" -lt 3600 ]; then echo "$((s/60))m $((s%60))s"
+  else echo "$((s/3600))h $(((s%3600)/60))m"; fi
+}
+
+render_snapshot() {
+  if [ -z "$RUN_DIR" ] || [ ! -d "$RUN_DIR" ]; then
+    echo "${C_RED}no run-dir found${C_RESET} (export RUN_DIR or pass --run-dir)" >&2
+    return 2
+  fi
+
+  local slug=$(basename "$RUN_DIR")
+  local d=$(count_done "$DEFINE_FW")
+  local s=$(count_done "$SYSTEMS_FW")
+  local p=$(count_done "$DECIDE_FW")
+  local total_done=$((d + s + p))
+
+  # Find latest written framework
+  local latest=""
+  if [ -d "$RUN_DIR/frameworks" ]; then
+    latest=$(ls -t "$RUN_DIR/frameworks"/*.md 2>/dev/null | head -1 | xargs -n1 basename 2>/dev/null | sed 's|\.md$||' || true)
+  fi
+
+  if [ "$PLAIN" = "1" ]; then
+    printf '[%s/25] %s\n' "$total_done" "${latest:-pending}"
+    return 0
+  fi
+
+  # Adversary max score
+  local adv_max=0
+  if [ -f "$RUN_DIR/adversary.jsonl" ]; then
+    adv_max=$(python3 -c "
+import json
+m = 0
+with open('$RUN_DIR/adversary.jsonl') as f:
+  for line in f:
+    line = line.strip()
+    if not line: continue
+    try:
+      d = json.loads(line)
+      m = max(m, int(d.get('score', 0)))
+    except Exception: pass
+print(m)
+" 2>/dev/null || echo 0)
+  fi
+  local adv_label
+  if [ "$adv_max" -le 3 ]; then adv_label="${C_GREEN}low${C_RESET}"
+  elif [ "$adv_max" -le 6 ]; then adv_label="${C_YELLOW}moderate${C_RESET}"
+  else adv_label="${C_RED}high${C_RESET}"; fi
+
+  # Budget status — read each field separately to avoid eval pitfalls.
+  local time_used="0" time_cap="null" tokens_used="0" tokens_cap="null" verdict="unknown"
+  if [ -f "$RUN_DIR/state.json" ]; then
+    time_used=$(python3 -c "import json,sys;d=json.load(open('$RUN_DIR/state.json'));print(d.get('budget_status',{}).get('time_used',0))" 2>/dev/null || echo 0)
+    time_cap=$(python3 -c "import json,sys;d=json.load(open('$RUN_DIR/state.json'));v=d.get('budget_status',{}).get('time_cap');print(v if v is not None else 'null')" 2>/dev/null || echo null)
+    tokens_used=$(python3 -c "import json,sys;d=json.load(open('$RUN_DIR/state.json'));print(d.get('budget_status',{}).get('tokens_used',0))" 2>/dev/null || echo 0)
+    tokens_cap=$(python3 -c "import json,sys;d=json.load(open('$RUN_DIR/state.json'));v=d.get('budget_status',{}).get('tokens_cap');print(v if v is not None else 'null')" 2>/dev/null || echo null)
+    verdict=$(python3 -c "import json,sys;d=json.load(open('$RUN_DIR/state.json'));print(d.get('budget_status',{}).get('verdict','unknown'))" 2>/dev/null || echo unknown)
+  fi
+
+  # Phase status labels
+  phase_label() {
+    local d=$1 t=$2
+    if [ "$d" = "$t" ]; then printf "%s✓%s" "$C_GREEN" "$C_RESET"
+    elif [ "$d" -gt 0 ]; then printf "%s%s%s" "$C_CYAN" "running" "$C_RESET"
+    else printf "%spending%s" "$C_DIM" "$C_RESET"
+    fi
+  }
+
+  # Header (centered banner)
+  local banner_text="/solve: $slug"
+  printf "%s═══ %s ═══════════════════════════════════════════%s\n" "$C_BOLD" "$banner_text" "$C_RESET"
+
+  printf "Phase 1 (Define)   ["
+  bar "$d" 8 "$WIDTH"
+  printf "] %s%d/8%s   %s\n" "$C_BOLD" "$d" "$C_RESET" "$(phase_label $d 8)"
+
+  printf "Phase 2 (Systems)  ["
+  bar "$s" 5 "$WIDTH"
+  printf "] %s%d/5%s   %s\n" "$C_BOLD" "$s" "$C_RESET" "$(phase_label $s 5)"
+
+  printf "Phase 3 (Decide)   ["
+  bar "$p" 12 "$WIDTH"
+  printf "] %s%d/12%s  %s\n" "$C_BOLD" "$p" "$C_RESET" "$(phase_label $p 12)"
+
+  printf "%s─────────────────────────────────────────────────────────────%s\n" "$C_DIM" "$C_RESET"
+
+  # Stats line 1
+  local time_str
+  if [ "$time_cap" != "null" ] && [ "$time_cap" != "?" ]; then
+    time_str="$(format_seconds ${time_used:-0}) / $(format_seconds $time_cap)"
+  else
+    time_str="$(format_seconds ${time_used:-0}) (uncapped)"
+  fi
+
+  local cost_str
+  if [ "$tokens_cap" != "null" ] && [ "$tokens_cap" != "?" ]; then
+    cost_str="\$$(printf %.2f ${tokens_used:-0}) / \$$(printf %.2f $tokens_cap)"
+  else
+    cost_str="\$$(printf %.2f ${tokens_used:-0}) (uncapped)"
+  fi
+
+  printf "Adversary max:  %s%d/10%s (%s)         Budget time:  %s\n" \
+    "$C_BOLD" "$adv_max" "$C_RESET" "$adv_label" "$time_str"
+  printf "Cost:           %s%s%s         Verdict:      %s\n" \
+    "$C_BOLD" "$cost_str" "$C_RESET" "$verdict"
+
+  if [ -n "$latest" ]; then
+    printf "Latest:         %s%s%s\n" "$C_CYAN" "$latest" "$C_RESET"
+  fi
+}
+
+if [ "$WATCH" = "1" ]; then
+  while :; do
+    clear 2>/dev/null || printf '\033[H\033[2J'
+    render_snapshot
+    sleep 2
+  done
+else
+  render_snapshot
+fi

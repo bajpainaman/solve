@@ -529,6 +529,29 @@ After each run, the ledger appends a row with `outcome: TBD`. Next time you run 
 
 When HIGH success rate drops below 70% over ≥ 10 settled runs, the skill auto-raises the rubric requirement (8 → 9) and surfaces the warning at next run start AND in the next run's Dissent section. Reset with `solve --calibrate reset`.
 
+## Live progress (v0.5.1+)
+
+Between framework boundaries, /solve prints a multi-phase progress block:
+
+```
+═══ /solve: should-we-migrate-to-oftv2 ═══════════════════════════
+Phase 1 (Define)   [████████████████████] 8/8   ✓
+Phase 2 (Systems)  [████████████████████] 5/5   ✓
+Phase 3 (Decide)   [██████░░░░░░░░░░░░░░] 4/12  running
+─────────────────────────────────────────────────────────────────
+Adversary max:  6/10 (moderate)         Budget time:  10m / 15m
+Cost:           $2.45 / $5.00           Verdict:      under_cap
+Latest:         decision-matrix
+```
+
+Check progress from a separate terminal:
+
+```bash
+solve progress              # rich block for the most-recent run
+solve progress --plain      # single-line "[N/25] current-framework"
+solve progress --watch      # repaint every 2s until Ctrl-C
+```
+
 ## The 25 frameworks at a glance
 
 | Phase | # | Framework | Run condition | Length |

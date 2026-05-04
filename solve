@@ -74,6 +74,21 @@ PY
     echo "Uninstalled. Note: ~/.gstack/parallel-api-key and ~/.claude/settings.json env left intact."
     exit 0
     ;;
+  progress|--progress)
+    # solve progress: print snapshot of the most-recent run dir under .context/solve/
+    if [ ! -x "$SKILL/bin/progress" ]; then
+      echo "ERROR: progress helper missing at $SKILL/bin/progress" >&2
+      echo "Run: solve --update" >&2
+      exit 1
+    fi
+    LATEST_RUN=$(ls -td .context/solve/*/ 2>/dev/null | head -1)
+    if [ -z "$LATEST_RUN" ]; then
+      echo "no /solve runs found in .context/solve/" >&2
+      exit 1
+    fi
+    shift
+    exec "$SKILL/bin/progress" --run-dir "${LATEST_RUN%/}" "$@"
+    ;;
   calibrate|--calibrate)
     # solve calibrate <subcommand>
     if [ ! -x "$SKILL/bin/calibration" ]; then

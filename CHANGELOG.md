@@ -8,6 +8,22 @@ All notable changes to `/solve` are documented here. The format follows [Keep a 
 - Self-tag releases on GitHub for pinned-curl installs (`bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/v0.5.0/install)`).
 - frameworks/minto.md: surface calibration drift warning in Dissent section (planned for v0.5.1).
 
+## [0.5.1] — 2026-05-04
+
+### Added
+
+- **`bin/progress` helper** — multi-phase Unicode progress bar for /solve runs. Shows Phase 1/2/3 completion (`[████████████░░░░░░░░] 8/12`), adversary max score with low/moderate/high label, budget burn (time + cost vs caps), latest framework written. Modes: default rich block, `--plain` single-line, `--watch` repaint every 2s.
+
+- **`solve progress`** subcommand. Reads the most-recent run dir under `.context/solve/` and shows the snapshot. Useful for checking a long-running session from a separate terminal.
+
+- **SKILL.md Step 8 now invokes `bin/progress`** between framework boundaries so the user sees live progress as a tool-call result. Print rules: at start of each phase, after each framework, on HALT, before report rendering.
+
+### Changed
+
+- install smoke tests now verify all 8 bins (added `progress`).
+- SKILL.md version bumped to 0.5.1.
+
+
 ## [0.5.0] — 2026-05-04
 
 ### Added
@@ -141,7 +157,8 @@ The fourth piece (AskUserQuestion auto-conversion) is preventive: teammates occa
 - Output formats: pyramid (Minto top-down), build-up, tldr.
 - Soft cost cap at $5 of API spend.
 
-[Unreleased]: https://github.com/bajpainaman/solve/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/bajpainaman/solve/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/bajpainaman/solve/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/bajpainaman/solve/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/bajpainaman/solve/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/bajpainaman/solve/compare/v0.2.0...v0.2.1
