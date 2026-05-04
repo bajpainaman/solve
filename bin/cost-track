@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# cost-track — increment the running cost ledger for a /solve run
+# Usage: cost-track <amount-in-usd>
+
+set -euo pipefail
+AMOUNT="${1:-0}"
+COST_FILE="${SOLVE_COST_FILE:-/tmp/solve-cost-default}"
+[ -f "$COST_FILE" ] || echo "0" > "$COST_FILE"
+
+python3 - "$COST_FILE" "$AMOUNT" <<'PY'
+import sys, os
+path, amt = sys.argv[1], float(sys.argv[2])
+with open(path) as f:
+    cur = float(f.read().strip() or "0")
+cur += amt
+with open(path, 'w') as f:
+    f.write(f"{cur:.4f}")
+print(f"{cur:.4f}")
+PY

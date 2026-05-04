@@ -1,0 +1,233 @@
+#!/usr/bin/env bash
+# /solve — one-shot installer
+#
+# Remote one-liner:
+#   bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/main/install)
+#
+# Local (after git clone):
+#   ./install
+#
+# What it does:
+#   1. Locates the skill source (this directory, either flat or .claude/skills/solve nested)
+#   2. Symlinks (or copies) it to ~/.claude/skills/solve
+#   3. Drops a `solve` CLI shim at ~/.local/bin/solve and ensures PATH covers it
+#   4. Enables CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS in ~/.claude/settings.json
+#   5. Verifies Claude Code >= 2.1.32 and gstack are present
+#   6. Walks through Parallel.ai key setup (optional, skippable)
+#   7. Smoke-tests every helper script
+#   8. Prints next-step usage hint
+#
+# Re-running is idempotent.
+
+set -euo pipefail
+
+# ---------- color/log helpers ----------
+if [ -t 1 ]; then
+  C_BOLD=$(printf '\033[1m'); C_GREEN=$(printf '\033[32m')
+  C_YELLOW=$(printf '\033[33m'); C_RED=$(printf '\033[31m')
+  C_DIM=$(printf '\033[2m'); C_RESET=$(printf '\033[0m')
+else
+  C_BOLD=""; C_GREEN=""; C_YELLOW=""; C_RED=""; C_DIM=""; C_RESET=""
+fi
+log()  { printf '%s\n' "$*"; }
+ok()   { printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
+warn() { printf '  %s!%s %s\n' "$C_YELLOW" "$C_RESET" "$*"; }
+fail() { printf '  %s✗%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; }
+step() { printf '\n%s== %s ==%s\n' "$C_BOLD" "$*" "$C_RESET"; }
+
+# ---------- locate source ----------
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+if [ -f "$SCRIPT_DIR/SKILL.md" ]; then
+  SRC="$SCRIPT_DIR"                                  # flat layout (the github repo root)
+elif [ -f "$SCRIPT_DIR/.claude/skills/solve/SKILL.md" ]; then
+  SRC="$SCRIPT_DIR/.claude/skills/solve"             # nested layout (vendored in another repo)
+else
+  fail "could not locate SKILL.md (looked in $SCRIPT_DIR)"
+  exit 1
+fi
+DEST="$HOME/.claude/skills/solve"
+SHIM_DIR="$HOME/.local/bin"
+SHIM="$SHIM_DIR/solve"
+
+step "/solve installer"
+log "Source: $SRC"
+log "Dest:   $DEST"
+log "Shim:   $SHIM"
+
+# ---------- step 1: dependency checks ----------
+step "1/7 dependency checks"
+
+CC_BIN="${CLAUDE_BIN:-claude}"
+if ! command -v "$CC_BIN" >/dev/null 2>&1; then
+  fail "claude CLI not on PATH (https://docs.claude.com/claude-code)"
+  exit 1
+fi
+CC_VER=$("$CC_BIN" --version 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+if [ -z "$CC_VER" ]; then
+  warn "could not parse claude --version (continuing)"
+else
+  awk -v v="$CC_VER" 'BEGIN{
+    split(v,a,".");
+    need_major=2; need_minor=1; need_patch=32;
+    if (a[1]<need_major || (a[1]==need_major && a[2]<need_minor) || (a[1]==need_major && a[2]==need_minor && a[3]<need_patch)) exit 1
+  }' && ok "claude $CC_VER (>= 2.1.32)" \
+     || { fail "claude $CC_VER is too old, need >= 2.1.32 for agent teams"; exit 1; }
+fi
+
+if command -v jq >/dev/null 2>&1; then
+  ok "jq found"; HAVE_JQ=1
+else
+  warn "jq not found — falling back to python3 for JSON edits"; HAVE_JQ=0
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  ok "python3 found"
+else
+  fail "python3 required (used for JSON edits + parallel-research)"
+  exit 1
+fi
+
+if [ -d "$HOME/.claude/skills/gstack" ]; then
+  ok "gstack found"
+else
+  warn "gstack not detected at ~/.claude/skills/gstack — /solve telemetry/learnings will degrade"
+fi
+
+# ---------- step 2: install skill files ----------
+step "2/7 install skill files"
+mkdir -p "$HOME/.claude/skills"
+
+if [ -e "$DEST" ] || [ -L "$DEST" ]; then
+  if [ -L "$DEST" ] && [ "$(readlink "$DEST")" = "$SRC" ]; then
+    ok "already symlinked correctly"
+  else
+    BACKUP="$DEST.bak.$(date +%Y%m%d-%H%M%S)"
+    mv "$DEST" "$BACKUP"
+    warn "moved existing $DEST -> $BACKUP"
+  fi
+fi
+
+if [ ! -e "$DEST" ]; then
+  if [ "${SOLVE_INSTALL_MODE:-symlink}" = "copy" ]; then
+    command cp -r "$SRC" "$DEST"
+    ok "copied to $DEST"
+  else
+    ln -s "$SRC" "$DEST"
+    ok "symlinked $DEST -> $SRC"
+  fi
+fi
+
+chmod +x "$DEST"/bin/* 2>/dev/null || true
+
+# ---------- step 3: install solve CLI shim ----------
+step "3/7 install \`solve\` CLI shim"
+mkdir -p "$SHIM_DIR"
+
+if [ -f "$SRC/solve" ]; then
+  command cp "$SRC/solve" "$SHIM"
+  chmod +x "$SHIM"
+  ok "$SHIM"
+else
+  fail "$SRC/solve not found (skipping shim install)"
+fi
+
+# Ensure ~/.local/bin is on PATH for current and future shells
+case ":$PATH:" in
+  *":$SHIM_DIR:"*) ok "$SHIM_DIR already on PATH" ;;
+  *)
+    warn "$SHIM_DIR not on PATH for this shell"
+    for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+      [ -f "$rc" ] || continue
+      if ! grep -q '# solve-cli >>>' "$rc" 2>/dev/null; then
+        {
+          printf '\n# solve-cli >>>\n'
+          printf 'export PATH="$HOME/.local/bin:$PATH"\n'
+          printf '# solve-cli <<<\n'
+        } >> "$rc"
+        ok "added PATH export to $rc"
+      fi
+    done
+    log "  ${C_DIM}restart your shell or run: source ~/.zshrc${C_RESET}"
+    ;;
+esac
+
+# ---------- step 4: enable agent teams flag ----------
+step "4/7 enable agent teams in ~/.claude/settings.json"
+SETTINGS="$HOME/.claude/settings.json"
+[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
+
+if [ "$HAVE_JQ" = "1" ]; then
+  TMP=$(mktemp)
+  jq '.env = (.env // {}) | .env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"' \
+     "$SETTINGS" > "$TMP" && mv "$TMP" "$SETTINGS"
+else
+  python3 - "$SETTINGS" <<'PY'
+import json, sys
+p = sys.argv[1]
+with open(p) as f:
+    try: d = json.load(f)
+    except Exception: d = {}
+d.setdefault("env", {})
+d["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"] = "1"
+with open(p, "w") as f:
+    json.dump(d, f, indent=2)
+PY
+fi
+ok "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = \"1\" in $SETTINGS"
+
+# ---------- step 5: parallel.ai key ----------
+step "5/7 Parallel.ai API key"
+KEY_FILE="$HOME/.gstack/parallel-api-key"
+mkdir -p "$HOME/.gstack"
+
+if [ -n "${PARALLEL_API_KEY:-}" ] || [ -s "$KEY_FILE" ]; then
+  ok "key already configured"
+elif [ "${SOLVE_INSTALL_NONINTERACTIVE:-0}" = "1" ] || [ ! -t 0 ]; then
+  warn "non-interactive install — skipping key setup"
+  warn "run later: $DEST/bin/parallel-setup"
+else
+  echo
+  echo "Get a key at https://platform.parallel.ai (skip if you don't have one — /solve degrades to WebSearch)"
+  read -r -p "Set up Parallel.ai key now? [Y/n] " yn
+  case "${yn:-Y}" in
+    n|N|no|NO) warn "skipped — run $DEST/bin/parallel-setup later" ;;
+    *)         "$DEST/bin/parallel-setup" || warn "key setup skipped/failed" ;;
+  esac
+fi
+
+# ---------- step 6: smoke test ----------
+step "6/7 smoke tests"
+[ -f "$DEST/SKILL.md" ]                    && ok "SKILL.md present"          || fail "SKILL.md missing"
+[ "$(ls "$DEST/frameworks" | wc -l | tr -d ' ')" = "25" ] && ok "25 framework files" || warn "framework count != 25"
+for b in parallel-research parallel-setup state-rw cost-track render-report; do
+  [ -x "$DEST/bin/$b" ] && ok "bin/$b executable" || fail "bin/$b missing or not executable"
+done
+[ -x "$SHIM" ] && ok "solve shim executable at $SHIM" || warn "solve shim missing"
+"$DEST/bin/parallel-setup" --status >/dev/null 2>&1 && ok "parallel-setup --status runs" || true
+
+# ---------- step 7: project skill routing nudge ----------
+step "7/7 project skill routing"
+if [ -f "$PWD/CLAUDE.md" ] && grep -q "/solve" "$PWD/CLAUDE.md" 2>/dev/null; then
+  ok "$PWD/CLAUDE.md already references /solve"
+elif [ -f "$PWD/CLAUDE.md" ]; then
+  warn "$PWD/CLAUDE.md exists but doesn't mention /solve (no auto-edit)"
+fi
+
+# ---------- done ----------
+log
+log "${C_BOLD}${C_GREEN}/solve installed.${C_RESET}"
+log
+log "Next steps:"
+log "  ${C_DIM}# from any directory:${C_RESET}"
+log "  solve \"<your problem>\""
+log
+log "  ${C_DIM}# or with a brief file:${C_RESET}"
+log "  solve docs/problem.md"
+log
+log "  ${C_DIM}# inside an existing claude session, use the slash form:${C_RESET}"
+log "  /solve \"<your problem>\""
+log
+log "Manage:"
+log "  solve --update           refresh the skill from the upstream repo"
+log "  solve --uninstall        remove everything (keeps your Parallel.ai key)"
+log "  $DEST/bin/parallel-setup --check"

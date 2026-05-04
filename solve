@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# solve — CLI shim that launches Claude Code with /solve preloaded
+#
+# Usage:
+#   solve                              opens Claude Code, types /solve (intake prompts)
+#   solve "<one-line problem>"         types /solve "<problem>"
+#   solve <path/to/brief.md>           types /solve <path>
+#   solve --help                       this help
+#   solve --update                     re-runs the installer to refresh the skill
+#   solve --uninstall                  removes the global skill, shim, and rc edits
+#
+# This shim runs `claude` with `/solve $@` as the first turn so the skill kicks in
+# immediately. Requires Claude Code (>=2.1.32) on PATH and /solve installed
+# at ~/.claude/skills/solve.
+
+set -euo pipefail
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+  exit 0
+fi
+
+if ! command -v claude >/dev/null 2>&1; then
+  echo "ERROR: claude CLI not on PATH. Install Claude Code: https://docs.claude.com/claude-code" >&2
+  exit 1
+fi
+
+SKILL="$HOME/.claude/skills/solve"
+if [ ! -d "$SKILL" ] && [ "${1:-}" != "--update" ]; then
+  echo "ERROR: /solve skill not installed at $SKILL" >&2
+  echo "Install: bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/main/install)" >&2
+  exit 1
+fi
+
+case "${1:-}" in
+  --update)
+    if [ -d "$SKILL" ] && [ -L "$SKILL" ]; then
+      SRC=$(readlink "$SKILL")
+    elif [ -d "$SKILL" ]; then
+      SRC="$SKILL"
+    else
+      SRC=""
+    fi
+    if [ -n "$SRC" ] && [ -x "$SRC/install" ]; then
+      exec bash "$SRC/install"
+    fi
+    echo "Re-running remote installer..."
+    exec bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/main/install)
+    ;;
+  --uninstall)
+    set +e
+    if [ -L "$SKILL" ] || [ -d "$SKILL" ]; then
+      rm -rf "$SKILL"
+      echo "removed $SKILL"
+    fi
+    SHIM="$HOME/.local/bin/solve"
+    if [ -L "$SHIM" ] || [ -f "$SHIM" ]; then
+      rm -f "$SHIM"
+      echo "removed $SHIM"
+    fi
+    for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+      if [ -f "$rc" ] && grep -q '# solve-cli >>>' "$rc" 2>/dev/null; then
+        cp "$rc" "$rc.solve-bak"
+        python3 - "$rc" <<'PY'
+import sys, re
+p = sys.argv[1]
+with open(p) as f: s = f.read()
+s = re.sub(r'\n?# solve-cli >>>.*?# solve-cli <<<\n?', '\n', s, flags=re.DOTALL)
+with open(p, 'w') as f: f.write(s)
+PY
+        echo "cleaned $rc (backup at $rc.solve-bak)"
+      fi
+    done
+    echo "Uninstalled. Note: ~/.gstack/parallel-api-key and ~/.claude/settings.json env left intact."
+    exit 0
+    ;;
+esac
+
+if [ $# -eq 0 ]; then
+  exec claude "/solve"
+else
+  exec claude "/solve $*"
+fi

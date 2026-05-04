@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# parallel-setup — Parallel.ai API key setup, validate, and inspect.
+#
+# Modes:
+#   parallel-setup                    interactive paste (silent prompt, recommended)
+#   parallel-setup --key "sk-..."     one-shot paste from arg
+#   parallel-setup --stdin            read key from stdin (for piping)
+#   parallel-setup --check            validate stored key with a probe
+#   parallel-setup --status           show where the key lives + obfuscated preview
+#   parallel-setup --remove           delete the stored key
+#   parallel-setup --help             this help
+#
+# Storage location: $HOME/.gstack/parallel-api-key (mode 0600)
+# /solve reads PARALLEL_API_KEY env var first, then falls back to this file.
+
+set -euo pipefail
+
+KEY_FILE="$HOME/.gstack/parallel-api-key"
+PROBE_URL="https://api.parallel.ai/v1/tasks?limit=1"
+
+mask() {
+  local k="$1"
+  local n=${#k}
+  if [ "$n" -le 8 ]; then echo "***"; return; fi
+  printf '%s...%s' "${k:0:4}" "${k: -4}"
+}
+
+probe() {
+  local key="$1"
+  if curl -sSf -m 8 -H "x-api-key: $key" "$PROBE_URL" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+store() {
+  local key="$1"
+  mkdir -p "$(dirname "$KEY_FILE")"
+  ( umask 077 && printf '%s\n' "$key" > "$KEY_FILE" )
+  chmod 600 "$KEY_FILE"
+}
+
+cmd_status() {
+  local key=""
+  local source=""
+  if [ -n "${PARALLEL_API_KEY:-}" ]; then
+    key="$PARALLEL_API_KEY"
+    source="env (PARALLEL_API_KEY)"
+  elif [ -f "$KEY_FILE" ]; then
+    key=$(tr -d '[:space:]' < "$KEY_FILE")
+    source="$KEY_FILE"
+  fi
+  if [ -z "$key" ]; then
+    echo "STATUS: not configured"
+    echo "RUN:    $0"
+    exit 1
+  fi
+  echo "STATUS: configured"
+  echo "SOURCE: $source"
+  echo "KEY:    $(mask "$key")"
+}
+
+cmd_check() {
+  local key=""
+  if [ -n "${PARALLEL_API_KEY:-}" ]; then
+    key="$PARALLEL_API_KEY"
+  elif [ -f "$KEY_FILE" ]; then
+    key=$(tr -d '[:space:]' < "$KEY_FILE")
+  fi
+  if [ -z "$key" ]; then
+    echo "STATUS: not configured"
+    echo "RUN:    $0"
+    exit 1
+  fi
+  if probe "$key"; then
+    echo "STATUS: ok ($(mask "$key"))"
+    exit 0
+  fi
+  echo "STATUS: key set but probe failed (invalid key, network blocked, or rate-limited)"
+  exit 2
+}
+
+cmd_remove() {
+  if [ -f "$KEY_FILE" ]; then
+    rm -f "$KEY_FILE"
+    echo "REMOVED: $KEY_FILE"
+  else
+    echo "NOTHING_TO_REMOVE: $KEY_FILE not present"
+  fi
+  if [ -n "${PARALLEL_API_KEY:-}" ]; then
+    echo "NOTE: PARALLEL_API_KEY is still set in this shell. unset it manually if you want to clear:"
+    echo "      unset PARALLEL_API_KEY"
+  fi
+}
+
+cmd_help() {
+  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+set_key_flow() {
+  local key="$1"
+  local trimmed
+  trimmed=$(printf '%s' "$key" | tr -d '[:space:]')
+  if [ -z "$trimmed" ]; then
+    echo "ERROR: empty key" >&2
+    exit 2
+  fi
+  case "$trimmed" in
+    sk-*|pk-*) ;;
+    *) echo "WARN: key does not start with 'sk-' or 'pk-' (continuing anyway)" >&2 ;;
+  esac
+
+  echo "Validating key with Parallel.ai..."
+  if probe "$trimmed"; then
+    store "$trimmed"
+    echo "STORED: $KEY_FILE (mode 600)"
+    echo "STATUS: ok ($(mask "$trimmed"))"
+    echo ""
+    echo "Done. /solve will pick this up automatically on next run."
+  else
+    echo "PROBE FAILED. Possible causes:"
+    echo "  - key is invalid"
+    echo "  - network blocked (corp proxy, offline)"
+    echo "  - Parallel.ai is down or rate-limiting"
+    echo ""
+    read -r -p "Store anyway? [y/N] " yn
+    case "$yn" in
+      y|Y|yes|YES)
+        store "$trimmed"
+        echo "STORED (unverified): $KEY_FILE"
+        echo "Re-run '$0 --check' once you can reach the API."
+        ;;
+      *)
+        echo "ABORTED. Key not stored."
+        exit 3
+        ;;
+    esac
+  fi
+}
+
+cmd_interactive() {
+  cat <<'EOF'
+Parallel.ai API key setup
+
+Get a key from: https://platform.parallel.ai/
+
+Paste it below. Input is hidden. Press Enter to submit, Ctrl+C to abort.
+EOF
+  printf 'Key: '
+  local key
+  if [ -t 0 ]; then
+    stty -echo
+    IFS= read -r key
+    stty echo
+    printf '\n'
+  else
+    IFS= read -r key
+  fi
+  set_key_flow "$key"
+}
+
+cmd_stdin() {
+  local key
+  IFS= read -r key
+  set_key_flow "$key"
+}
+
+case "${1:-}" in
+  ""|--interactive)  cmd_interactive ;;
+  --key)             [ $# -ge 2 ] || { echo "ERROR: --key requires a value" >&2; exit 2; }
+                     set_key_flow "$2" ;;
+  --stdin)           cmd_stdin ;;
+  --check)           cmd_check ;;
+  --status)          cmd_status ;;
+  --remove|--unset)  cmd_remove ;;
+  --help|-h)         cmd_help ;;
+  *)
+    echo "ERROR: unknown arg: $1" >&2
+    cmd_help
+    exit 2
+    ;;
+esac

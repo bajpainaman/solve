@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# state-rw — read/write JSON keys in $RUN_DIR/state.json for resume-safe /solve runs
+# Usage:
+#   state-rw read  <run-dir> <key>
+#   state-rw write <run-dir> <key> <value-json>
+#   state-rw init  <run-dir> <slug> <problem>
+
+set -euo pipefail
+CMD="${1:?usage: state-rw <read|write|init> <run-dir> ...}"
+RUN_DIR="${2:?usage: state-rw <cmd> <run-dir> ...}"
+mkdir -p "$RUN_DIR"
+STATE="$RUN_DIR/state.json"
+
+case "$CMD" in
+  init)
+    SLUG="${3:?slug required}"
+    PROBLEM="${4:?problem required}"
+    if [ ! -f "$STATE" ]; then
+      python3 - "$STATE" "$SLUG" "$PROBLEM" <<'PY'
+import json, sys, os, time
+path, slug, problem = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path, 'w') as f:
+    json.dump({
+        "slug": slug,
+        "problem": problem,
+        "phase": "intake",
+        "completed_frameworks": [],
+        "started_at": time.time(),
+    }, f, indent=2)
+PY
+    fi
+    ;;
+  read)
+    KEY="${3:?key required}"
+    [ -f "$STATE" ] || { echo "null"; exit 0; }
+    python3 -c "
+import json,sys
+with open('$STATE') as f: s = json.load(f)
+v = s.get('$KEY')
+print(json.dumps(v) if v is not None else 'null')
+"
+    ;;
+  write)
+    KEY="${3:?key required}"
+    VAL="${4:?value-json required}"
+    [ -f "$STATE" ] || echo '{}' > "$STATE"
+    python3 - "$STATE" "$KEY" "$VAL" <<'PY'
+import json, sys
+path, key, val_json = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    val = json.loads(val_json)
+except Exception:
+    val = val_json
+with open(path) as f: s = json.load(f)
+s[key] = val
+with open(path, 'w') as f: json.dump(s, f, indent=2)
+print(f"set {key}")
+PY
+    ;;
+  *)
+    echo "unknown command: $CMD" >&2
+    exit 2
+    ;;
+esac

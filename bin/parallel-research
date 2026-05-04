@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# parallel-research — fan out research queries to Parallel.ai with WebSearch fallback
+#
+# Usage:
+#   bin/parallel-research <queries.json> <output-dir>
+#
+# queries.json format:
+#   [
+#     {"id": "q1", "objective": "find prior art for X", "search_queries": ["..."]},
+#     {"id": "q2", "objective": "...", "search_queries": ["..."]}
+#   ]
+#
+# Output:
+#   <output-dir>/<id>.json — one file per query with results
+#   <output-dir>/manifest.json — summary of all queries
+
+set -euo pipefail
+
+QUERIES_FILE="${1:?usage: parallel-research <queries.json> <output-dir>}"
+OUT_DIR="${2:?usage: parallel-research <queries.json> <output-dir>}"
+mkdir -p "$OUT_DIR"
+
+API_KEY="${PARALLEL_API_KEY:-}"
+if [ -z "$API_KEY" ] && [ -f "$HOME/.gstack/parallel-api-key" ]; then
+  API_KEY=$(tr -d '[:space:]' < "$HOME/.gstack/parallel-api-key" 2>/dev/null || true)
+fi
+
+USE_PARALLEL="no"
+if [ -n "$API_KEY" ]; then
+  if curl -sSf -m 5 -H "x-api-key: $API_KEY" \
+       "https://api.parallel.ai/v1/tasks?limit=1" >/dev/null 2>&1; then
+    USE_PARALLEL="yes"
+  fi
+fi
+
+echo "PARALLEL_RESEARCH: backend=$([ "$USE_PARALLEL" = "yes" ] && echo "parallel.ai" || echo "websearch-fallback")"
+
+COST_FILE="${SOLVE_COST_FILE:-/tmp/solve-cost-$$}"
+[ -f "$COST_FILE" ] || echo "0" > "$COST_FILE"
+
+submit_parallel() {
+  local objective="$1"
+  local processor="${2:-base}"
+  curl -sS -X POST "https://api.parallel.ai/v1/tasks/runs" \
+    -H "x-api-key: $API_KEY" \
+    -H "Content-Type: application/json" \
+    -d "$(cat <<EOF
+{
+  "input": $(printf %s "$objective" | python3 -c 'import sys,json;print(json.dumps(sys.stdin.read()))'),
+  "processor": "$processor",
+  "task_spec": {
+    "output_schema": {
+      "type": "json",
+      "json_schema": {
+        "type": "object",
+        "properties": {
+          "summary": {"type": "string"},
+          "key_findings": {"type": "array", "items": {"type": "string"}},
+          "sources": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["summary", "key_findings", "sources"]
+      }
+    }
+  }
+}
+EOF
+)"
+}
+
+poll_parallel() {
+  local run_id="$1"
+  local max_wait="${2:-120}"
+  local start_ts
+  start_ts=$(date +%s)
+  while :; do
+    local resp
+    resp=$(curl -sS -H "x-api-key: $API_KEY" \
+      "https://api.parallel.ai/v1/tasks/runs/$run_id" 2>/dev/null || echo "{}")
+    local status
+    status=$(printf %s "$resp" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status",""))' 2>/dev/null || echo "")
+    if [ "$status" = "completed" ]; then
+      curl -sS -H "x-api-key: $API_KEY" \
+        "https://api.parallel.ai/v1/tasks/runs/$run_id/result"
+      return 0
+    fi
+    if [ "$status" = "failed" ] || [ "$status" = "cancelled" ]; then
+      echo "$resp"
+      return 1
+    fi
+    local now
+    now=$(date +%s)
+    if [ $((now - start_ts)) -gt "$max_wait" ]; then
+      echo '{"error": "timeout"}'
+      return 1
+    fi
+    sleep 3
+  done
+}
+
+run_query() {
+  local id="$1"
+  local objective="$2"
+  local out="$OUT_DIR/$id.json"
+
+  if [ "$USE_PARALLEL" = "yes" ]; then
+    local submit_resp
+    submit_resp=$(submit_parallel "$objective" "base" || echo '{}')
+    local run_id
+    run_id=$(printf %s "$submit_resp" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("run_id",""))' 2>/dev/null || echo "")
+    if [ -n "$run_id" ]; then
+      echo "  -> $id submitted run_id=$run_id"
+      local result
+      result=$(poll_parallel "$run_id" 120 || echo '{"error":"poll failed"}')
+      printf '{"id":"%s","backend":"parallel.ai","run_id":"%s","result":%s}\n' \
+        "$id" "$run_id" "$result" > "$out"
+      python3 -c "
+import json
+with open('$COST_FILE') as f: c = float(f.read().strip() or '0')
+c += 0.05
+with open('$COST_FILE','w') as f: f.write(str(c))
+" 2>/dev/null || true
+      return 0
+    fi
+  fi
+
+  printf '{"id":"%s","backend":"websearch-fallback","objective":%s,"note":"parent agent should run WebSearch"}\n' \
+    "$id" "$(printf %s "$objective" | python3 -c 'import sys,json;print(json.dumps(sys.stdin.read()))')" > "$out"
+}
+
+python3 - "$QUERIES_FILE" "$OUT_DIR" <<'PY' | while IFS=$'\t' read -r id objective; do
+  run_query "$id" "$objective" &
+done
+import json, sys, os
+with open(sys.argv[1]) as f:
+    queries = json.load(f)
+for q in queries:
+    print(f"{q['id']}\t{q['objective']}")
+PY
+
+wait
+
+python3 - "$OUT_DIR" <<'PY'
+import json, os, sys
+out_dir = sys.argv[1]
+manifest = []
+for fn in sorted(os.listdir(out_dir)):
+    if fn.endswith('.json') and fn != 'manifest.json':
+        try:
+            with open(os.path.join(out_dir, fn)) as f:
+                manifest.append(json.load(f))
+        except Exception as e:
+            manifest.append({"file": fn, "error": str(e)})
+with open(os.path.join(out_dir, 'manifest.json'), 'w') as f:
+    json.dump({"queries": manifest, "count": len(manifest)}, f, indent=2)
+print(f"Wrote manifest with {len(manifest)} queries")
+PY

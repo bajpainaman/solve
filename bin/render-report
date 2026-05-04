@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# render-report — assemble the final markdown report from all framework outputs
+# Usage: render-report --slug X --format pyramid|build-up|tldr --run-dir DIR --output FILE
+
+set -euo pipefail
+
+SLUG=""
+FORMAT="pyramid"
+RUN_DIR=""
+OUTPUT=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --slug) SLUG="$2"; shift 2 ;;
+    --format) FORMAT="$2"; shift 2 ;;
+    --run-dir) RUN_DIR="$2"; shift 2 ;;
+    --output) OUTPUT="$2"; shift 2 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+[ -n "$SLUG" ] && [ -n "$RUN_DIR" ] && [ -n "$OUTPUT" ] || {
+  echo "usage: render-report --slug X --format F --run-dir DIR --output FILE" >&2
+  exit 2
+}
+
+TEMPLATE_DIR="$(dirname "$0")/../templates"
+
+python3 - "$SLUG" "$FORMAT" "$RUN_DIR" "$OUTPUT" "$TEMPLATE_DIR" <<'PY'
+import json, os, sys, time
+from pathlib import Path
+
+slug, fmt, run_dir, output, template_dir = sys.argv[1:6]
+run_dir = Path(run_dir)
+fwk_dir = run_dir / "frameworks"
+state_path = run_dir / "state.json"
+
+state = {}
+if state_path.exists():
+    state = json.loads(state_path.read_text())
+
+problem = state.get("problem", "<unknown>")
+intake = state.get("intake", {})
+confidence = state.get("confidence", {})
+recommendation = state.get("recommendation", "<no recommendation generated>")
+adversary = state.get("adversary_top3", [])
+handoffs = state.get("handoffs", [])
+
+def fwk(name):
+    p = fwk_dir / f"{name}.md"
+    return p.read_text() if p.exists() else f"_(framework `{name}` did not run)_"
+
+define_phase = ["abstraction-ladder", "first-principles", "issue-tree", "ishikawa",
+                "inversion-define", "zwicky-box", "conflict-resolution-diagram",
+                "productive-thinking"]
+systems_phase = ["iceberg", "connection-circles", "concept-map",
+                 "balancing-loop", "reinforcing-loop"]
+decide_phase = ["cynefin", "eisenhower", "impact-effort", "decision-matrix",
+                "second-order", "ladder-of-inference", "ooda-loop", "hard-choice",
+                "confidence-speed-quality", "sbi", "six-hats", "minto"]
+
+def section(phase_name, items):
+    out = [f"## {phase_name}\n"]
+    for it in items:
+        out.append(f"\n### {it}\n")
+        out.append(fwk(it))
+        out.append("\n")
+    return "\n".join(out)
+
+decision_block = f"""## Decision
+
+> **{recommendation}**
+
+## Confidence
+
+- **Rubric:** {confidence.get('rubric', 'n/a')}/10
+- **Bayesian Posterior:** {confidence.get('posterior', 'n/a')}
+- **Bucket:** **{confidence.get('bucket', 'n/a')}**
+
+Rubric breakdown:
+{json.dumps(confidence.get('rubric_breakdown', {}), indent=2)}
+"""
+
+dissent_lines = ["## Dissent (Continuous Adversary)\n"]
+if adversary:
+    for i, a in enumerate(adversary, 1):
+        dissent_lines.append(f"{i}. {a}")
+else:
+    dissent_lines.append("_(no adversary findings recorded)_")
+dissent_block = "\n".join(dissent_lines)
+
+handoff_lines = ["## Handoffs\n"]
+if handoffs:
+    for h in handoffs:
+        handoff_lines.append(f"- `{h.get('skill','?')}` @ {h.get('phase','?')}: {h.get('reason','')}")
+else:
+    handoff_lines.append("_(no mid-run handoffs)_")
+handoff_block = "\n".join(handoff_lines)
+
+header = f"""# /solve report — {slug}
+
+**Problem:** {problem}
+**Run:** {state.get('session_id', 'n/a')}
+**Generated:** {time.strftime('%Y-%m-%d %H:%M:%S')}
+**Format:** {fmt}
+
+**Intake**
+- Stakeholders: {intake.get('stakeholders','?')}
+- Time pressure: {intake.get('time_pressure','?')}
+- Reversibility: {intake.get('reversibility','?')}
+- Decision-maker: {intake.get('decision_maker','?')}
+- Success criteria: {intake.get('success_criteria','?')}
+- Domain: {intake.get('domain','?')}
+"""
+
+define_section = section("Phase 1: Define", define_phase)
+systems_section = section("Phase 2: Systems", systems_phase)
+decide_section = section("Phase 3: Decide", decide_phase)
+
+if fmt == "pyramid":
+    body = "\n".join([
+        header,
+        decision_block,
+        dissent_block,
+        f"## Synthesis (Minto)\n\n{fwk('minto')}",
+        define_section,
+        systems_section,
+        decide_section,
+        handoff_block,
+    ])
+elif fmt == "build-up":
+    body = "\n".join([
+        header,
+        define_section,
+        systems_section,
+        decide_section,
+        f"## Synthesis (Minto)\n\n{fwk('minto')}",
+        decision_block,
+        dissent_block,
+        handoff_block,
+    ])
+else:  # tldr
+    tldr_lines = state.get("tldr", ["_(no tldr generated)_"])
+    tldr_block = "## TL;DR\n\n" + "\n".join(f"- {b}" for b in tldr_lines)
+    body = "\n".join([
+        header,
+        tldr_block,
+        decision_block,
+        dissent_block,
+        define_section,
+        systems_section,
+        decide_section,
+        f"## Appendix: Synthesis (Minto)\n\n{fwk('minto')}",
+        handoff_block,
+    ])
+
+Path(output).write_text(body)
+print(f"wrote {output} ({len(body)} bytes)")
+PY
