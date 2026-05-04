@@ -235,6 +235,65 @@ PY
 fi
 ok "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = \"1\" in $SETTINGS"
 
+# ---------- step 4.5: claude code statusline ----------
+step "4.5/7 Claude Code statusline (live progress in bottom bar)"
+SETTINGS="$HOME/.claude/settings.json"
+[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
+
+CURRENT_STATUSLINE=$(python3 -c "
+import json
+try:
+  d = json.load(open('$SETTINGS'))
+  sl = d.get('statusLine')
+  if sl is None: print('none')
+  elif isinstance(sl, dict) and 'solve' in (sl.get('command') or ''): print('ours')
+  else: print('other')
+except Exception: print('none')
+" 2>/dev/null || echo none)
+
+case "$CURRENT_STATUSLINE" in
+  ours)
+    ok "/solve statusline already configured"
+    ;;
+  none)
+    if [ "${SOLVE_INSTALL_NONINTERACTIVE:-0}" = "1" ] || [ ! -t 0 ]; then
+      # Auto-enable in non-interactive mode (curl-bash flow) since user opted in by running install
+      python3 - "$SETTINGS" "$DEST/bin/statusline" <<'PYE'
+import json, sys
+path, sl_path = sys.argv[1:]
+with open(path) as f: d = json.load(f)
+d['statusLine'] = {'type': 'command', 'command': sl_path}
+with open(path, 'w') as f: json.dump(d, f, indent=2)
+PYE
+      ok "statusLine wired to $DEST/bin/statusline"
+      log "  ${C_DIM}Restart any open claude sessions to see live /solve progress in the bottom bar.${C_RESET}"
+    else
+      echo
+      read -r -p "Enable /solve live progress bar in Claude Code's bottom status bar? [Y/n] " yn
+      case "${yn:-Y}" in
+        n|N|no|NO) warn "skipped — set manually later in $SETTINGS" ;;
+        *)
+          python3 - "$SETTINGS" "$DEST/bin/statusline" <<'PYE'
+import json, sys
+path, sl_path = sys.argv[1:]
+with open(path) as f: d = json.load(f)
+d['statusLine'] = {'type': 'command', 'command': sl_path}
+with open(path, 'w') as f: json.dump(d, f, indent=2)
+PYE
+          ok "statusLine wired to $DEST/bin/statusline"
+          log "  ${C_DIM}Restart any open claude sessions to see live progress.${C_RESET}"
+          ;;
+      esac
+    fi
+    ;;
+  other)
+    warn "you already have a custom statusLine in $SETTINGS"
+    warn "to enable /solve progress, replace it with:"
+    log "    "statusLine": {"type": "command", "command": "$DEST/bin/statusline"}"
+    log "  ${C_DIM}or chain your existing script + ours via a wrapper${C_RESET}"
+    ;;
+esac
+
 # ---------- step 5: parallel.ai key ----------
 step "5/7 Parallel.ai API key"
 KEY_FILE="$HOME/.gstack/parallel-api-key"
@@ -260,7 +319,7 @@ step "6/7 smoke tests"
 [ -f "$DEST/SKILL.md" ]                    && ok "SKILL.md present"          || fail "SKILL.md missing"
 _FRAMEWORK_COUNT=$(find "$DEST/frameworks" -maxdepth 1 -name '*.md' -not -name '_TEMPLATE.md' 2>/dev/null | wc -l | tr -d ' ')
 [ "$_FRAMEWORK_COUNT" = "25" ] && ok "25 framework files" || warn "framework count = $_FRAMEWORK_COUNT (expected 25)"
-for b in parallel-research parallel-setup state-rw cost-track render-report budget-track calibration progress; do
+for b in parallel-research parallel-setup state-rw cost-track render-report budget-track calibration progress statusline; do
   [ -x "$DEST/bin/$b" ] && ok "bin/$b executable" || fail "bin/$b missing or not executable"
 done
 [ -x "$SHIM" ] && ok "solve shim executable at $SHIM" || warn "solve shim missing"

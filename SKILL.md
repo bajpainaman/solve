@@ -1,6 +1,6 @@
 ---
 name: solve
-version: 0.5.1
+version: 0.5.2
 description: |
   Strategic problem solver. FIRST runs a regime classifier (Step 0.5) that routes the
   question: knowledge → answer inline, bug → /investigate, idea → /office-hours, decision

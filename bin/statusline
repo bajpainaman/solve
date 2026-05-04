@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# statusline — Claude Code bottom-status renderer for /solve runs.
+#
+# Wired up by setting `statusLine` in ~/.claude/settings.json:
+#   {"statusLine": {"type": "command", "command": "$HOME/.claude/skills/solve/bin/statusline"}}
+#
+# Claude Code calls this script with a JSON context on stdin (cwd, session,
+# transcript path, model). We use cwd to find the most-recent /solve run
+# under .context/solve/. If no active run, we print nothing (Claude Code
+# falls back to its default).
+#
+# Output: single line, no trailing newline. ANSI colors OK (Claude Code renders them).
+# Performance: this gets called frequently. Keep it under 50ms.
+
+set -euo pipefail
+
+# Read JSON context from stdin, extract cwd
+INPUT=""
+if [ ! -t 0 ]; then
+  INPUT=$(cat 2>/dev/null || true)
+fi
+
+CWD=""
+if [ -n "$INPUT" ]; then
+  CWD=$(printf '%s' "$INPUT" | python3 -c "
+import json, sys
+try:
+  d = json.load(sys.stdin)
+  print(d.get('cwd') or d.get('workspace', {}).get('cwd', ''))
+except Exception:
+  pass
+" 2>/dev/null || true)
+fi
+[ -z "$CWD" ] && CWD="$(pwd)"
+
+# Find the most-recent /solve run dir under cwd
+SOLVE_DIR="$CWD/.context/solve"
+if [ ! -d "$SOLVE_DIR" ]; then
+  exit 0  # no /solve runs in this project
+fi
+
+LATEST=$(ls -td "$SOLVE_DIR"/*/ 2>/dev/null | head -1)
+if [ -z "$LATEST" ]; then
+  exit 0
+fi
+LATEST="${LATEST%/}"
+SLUG=$(basename "$LATEST")
+
+# If the run is older than 6 hours, skip (probably stale)
+NOW=$(date +%s)
+LATEST_MTIME=$(stat -f %m "$LATEST" 2>/dev/null || stat -c %Y "$LATEST" 2>/dev/null || echo "$NOW")
+AGE=$((NOW - LATEST_MTIME))
+if [ "$AGE" -gt 21600 ]; then
+  exit 0
+fi
+
+# Phase definitions (must stay in sync with SKILL.md)
+DEFINE_FW="abstraction-ladder first-principles issue-tree ishikawa inversion-define zwicky-box conflict-resolution-diagram productive-thinking"
+SYSTEMS_FW="iceberg connection-circles concept-map balancing-loop reinforcing-loop"
+DECIDE_FW="cynefin eisenhower impact-effort decision-matrix second-order ladder-of-inference ooda-loop hard-choice confidence-speed-quality sbi six-hats minto"
+
+count_done() {
+  local list="$1"
+  local count=0
+  for fw in $list; do
+    [ -s "$LATEST/frameworks/$fw.md" ] && count=$((count + 1))
+  done
+  echo "$count"
+}
+D=$(count_done "$DEFINE_FW")
+S=$(count_done "$SYSTEMS_FW")
+P=$(count_done "$DECIDE_FW")
+TOTAL=$((D + S + P))
+
+# 10-char mini bar
+WIDTH=10
+PCT=$(( (TOTAL * WIDTH) / 25 ))
+[ "$PCT" -gt "$WIDTH" ] && PCT=$WIDTH
+BAR=""
+for ((i=0; i<PCT; i++)); do BAR="${BAR}█"; done
+for ((i=PCT; i<WIDTH; i++)); do BAR="${BAR}░"; done
+
+# Latest framework (the most recent file mtime)
+LATEST_FW=""
+if [ -d "$LATEST/frameworks" ]; then
+  LATEST_FW=$(ls -t "$LATEST/frameworks"/*.md 2>/dev/null | head -1 | xargs -n1 basename 2>/dev/null | sed 's|\.md$||' || true)
+fi
+
+# Budget summary (compact)
+BUDGET=""
+if [ -f "$LATEST/state.json" ]; then
+  BUDGET=$(python3 -c "
+import json
+try:
+  d = json.load(open('$LATEST/state.json'))
+  bs = d.get('budget_status', {})
+  t = bs.get('time_used', 0) or 0
+  tc = bs.get('time_cap')
+  k = bs.get('tokens_used', 0) or 0
+  kc = bs.get('tokens_cap')
+  parts = []
+  if tc:
+    tm = int(t) // 60
+    tcm = int(tc) // 60
+    parts.append(f'{tm}m/{tcm}m')
+  elif t > 0:
+    parts.append(f'{int(t)//60}m')
+  if kc:
+    parts.append(f'\${float(k):.2f}/\${float(kc):.2f}')
+  elif k > 0:
+    parts.append(f'\${float(k):.2f}')
+  print(' '.join(parts))
+except Exception:
+  pass
+" 2>/dev/null || true)
+fi
+
+# Color codes (Claude Code statusline supports ANSI)
+C_CYAN=$(printf '\033[36m')
+C_GREEN=$(printf '\033[32m')
+C_YELLOW=$(printf '\033[33m')
+C_DIM=$(printf '\033[2m')
+C_RESET=$(printf '\033[0m')
+
+# Pick dot color based on completion
+if [ "$TOTAL" -ge 25 ]; then
+  DOT="${C_GREEN}●${C_RESET}"
+elif [ "$TOTAL" -ge 1 ]; then
+  DOT="${C_CYAN}●${C_RESET}"
+else
+  DOT="${C_DIM}○${C_RESET}"
+fi
+
+# Build the line: ● solve <slug> [████████░░] 17/25 decision-matrix • 10m/15m $2.45/$5
+# Single color per segment, no fancy split-coloring (was buggy on 0-fill bars)
+printf '%s solve %s%s%s [%s%s%s] %s%d/25%s' \
+  "$DOT" \
+  "$C_DIM" "$SLUG" "$C_RESET" \
+  "$C_CYAN" "$BAR" "$C_RESET" \
+  "$C_CYAN" "$TOTAL" "$C_RESET"
+
+if [ -n "$LATEST_FW" ] && [ "$TOTAL" -lt 25 ]; then
+  printf ' %s%s%s' "$C_YELLOW" "$LATEST_FW" "$C_RESET"
+fi
+
+if [ -n "$BUDGET" ]; then
+  printf ' %s• %s%s' "$C_DIM" "$BUDGET" "$C_RESET"
+fi
+# Note: NO trailing newline — Claude Code joins with its own metadata

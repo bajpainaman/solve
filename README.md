@@ -552,6 +552,26 @@ solve progress --plain      # single-line "[N/25] current-framework"
 solve progress --watch      # repaint every 2s until Ctrl-C
 ```
 
+### Live status bar (v0.5.2+)
+
+While `/solve` is running, the Claude Code bottom status bar shows live progress alongside the token count:
+
+```
+● solve oftv2-migration [████░░░░░░] 8/25 issue-tree • 4m/15m $1.20/$5
+```
+
+The dot turns green when all 25 frameworks complete. The framework name updates as each one is written. Time and cost burn show against your budget caps.
+
+The installer auto-configures this via `~/.claude/settings.json::statusLine`. To toggle it off:
+
+```bash
+# To disable: remove statusLine from ~/.claude/settings.json
+# To re-enable: solve --update
+```
+
+If you have a custom statusLine already, the installer warns rather than overwriting.
+
+
 ## The 25 frameworks at a glance
 
 | Phase | # | Framework | Run condition | Length |

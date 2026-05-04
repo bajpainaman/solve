@@ -8,6 +8,27 @@ All notable changes to `/solve` are documented here. The format follows [Keep a 
 - Self-tag releases on GitHub for pinned-curl installs (`bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/v0.5.0/install)`).
 - frameworks/minto.md: surface calibration drift warning in Dissent section (planned for v0.5.1).
 
+## [0.5.2] — 2026-05-04
+
+### Added
+
+- **`bin/statusline` helper** — Claude Code bottom status bar renderer. Shows `● solve <slug> [████░░░░░░] 8/25 framework-name • 4m/15m $1.20/$5` while a /solve run is active. Reads cwd from Claude Code's JSON stdin context, finds the most-recent `.context/solve/<slug>/`, computes per-phase completion + budget burn. Stays under 50ms per call.
+
+- **Auto-config in install** (Step 4.5/7). Installer detects existing `statusLine` config in `~/.claude/settings.json`:
+  - **None**: prompts (or auto-enables in non-interactive curl-bash flow) to wire `/solve` statusline.
+  - **Already ours**: confirms it's set up.
+  - **Custom**: warns and shows the config to set manually rather than overwriting.
+
+### Changed
+
+- install smoke tests now verify all 9 bins.
+- SKILL.md version 0.5.1 → 0.5.2.
+
+### Why
+
+Real-world feedback: the v0.5.1 progress block (printed as a tool-call result in the conversation) is informative but only visible when you scroll. Claude Code's bottom status bar is always visible. Wiring our progress into that bar means the user sees /solve state at a glance, alongside the token count and permissions indicator.
+
+
 ## [0.5.1] — 2026-05-04
 
 ### Added
@@ -157,7 +178,8 @@ The fourth piece (AskUserQuestion auto-conversion) is preventive: teammates occa
 - Output formats: pyramid (Minto top-down), build-up, tldr.
 - Soft cost cap at $5 of API spend.
 
-[Unreleased]: https://github.com/bajpainaman/solve/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/bajpainaman/solve/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/bajpainaman/solve/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/bajpainaman/solve/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/bajpainaman/solve/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/bajpainaman/solve/compare/v0.2.1...v0.3.0
