@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# budget-track — track wallclock + token spend against caps set in state.json
+#
+# Usage:
+#   budget-track --check time     check time only; exit 0=under, 1=warned (≥80%), 2=halted
+#   budget-track --check tokens   check token spend only
+#   budget-track --check both     check both; worst exit code wins
+#   budget-track --status         print full status as JSON
+#   budget-track --warn-pct N     override warning threshold (default 80)
+#
+# Reads state from $RUN_DIR/state.json::budget = {time_seconds: N, tokens_usd: N}
+# Reads spend from $SOLVE_COST_FILE for tokens, computes wallclock from $TEL_START.
+# Both null in state = unlimited; exits 0 immediately.
+
+set -euo pipefail
+
+RUN_DIR="${RUN_DIR:-${SOLVE_RUN_DIR:-}}"
+COST_FILE="${SOLVE_COST_FILE:-/tmp/solve-cost-default}"
+TEL_START="${TEL_START:-${_TEL_START:-}}"
+WARN_PCT=80
+MODE="status"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check)        MODE="check_${2}"; shift 2 ;;
+    --status)       MODE="status"; shift ;;
+    --warn-pct)     WARN_PCT="$2"; shift 2 ;;
+    --run-dir)      RUN_DIR="$2"; shift 2 ;;
+    --tel-start)    TEL_START="$2"; shift 2 ;;
+    -h|--help)      sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *)              echo "ERROR: unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [ -z "$RUN_DIR" ]; then
+  echo "ERROR: RUN_DIR not set (pass --run-dir or export SOLVE_RUN_DIR)" >&2
+  exit 2
+fi
+STATE="$RUN_DIR/state.json"
+
+read_budget() {
+  if [ ! -f "$STATE" ]; then echo "null null"; return; fi
+  python3 - "$STATE" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    s = json.load(f)
+b = s.get("budget", {}) or {}
+print(b.get("time_seconds") if b.get("time_seconds") else "null",
+      b.get("tokens_usd") if b.get("tokens_usd") else "null")
+PY
+}
+
+elapsed_seconds() {
+  if [ -z "$TEL_START" ]; then echo 0; return; fi
+  local now
+  now=$(date +%s)
+  echo $(( now - TEL_START ))
+}
+
+current_spend() {
+  if [ -f "$COST_FILE" ]; then
+    cat "$COST_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0"
+  else
+    echo "0"
+  fi
+}
+
+write_status() {
+  local time_used=$1 time_cap=$2 tokens_used=$3 tokens_cap=$4 verdict=$5
+  python3 - "$STATE" "$time_used" "$time_cap" "$tokens_used" "$tokens_cap" "$verdict" <<'PY'
+import json, sys, os
+path, t_used, t_cap, k_used, k_cap, verdict = sys.argv[1:]
+try:
+    with open(path) as f: s = json.load(f)
+except Exception:
+    s = {}
+s["budget_status"] = {
+    "time_used": int(t_used),
+    "time_cap": None if t_cap == "null" else int(t_cap),
+    "tokens_used": float(k_used),
+    "tokens_cap": None if k_cap == "null" else float(k_cap),
+    "verdict": verdict,
+}
+with open(path, "w") as f: json.dump(s, f, indent=2)
+PY
+}
+
+read -r TIME_CAP TOKENS_CAP < <(read_budget)
+TIME_USED=$(elapsed_seconds)
+TOKENS_USED=$(current_spend)
+
+# Both unlimited
+if [ "$TIME_CAP" = "null" ] && [ "$TOKENS_CAP" = "null" ]; then
+  write_status "$TIME_USED" "null" "$TOKENS_USED" "null" "unlimited"
+  if [ "$MODE" = "status" ]; then
+    echo "{\"verdict\":\"unlimited\",\"time_used\":$TIME_USED,\"tokens_used\":$TOKENS_USED}"
+  fi
+  exit 0
+fi
+
+VERDICT="under_cap"
+EXIT=0
+WARNINGS=()
+
+if [ "$TIME_CAP" != "null" ]; then
+  TIME_PCT=$(awk -v u="$TIME_USED" -v c="$TIME_CAP" 'BEGIN{if (c==0) print 0; else printf "%d", (u*100)/c}')
+  if [ "$TIME_USED" -ge "$TIME_CAP" ]; then
+    VERDICT="halted_time"
+    EXIT=2
+    WARNINGS+=("time exceeded: ${TIME_USED}s/${TIME_CAP}s")
+  elif [ "$TIME_PCT" -ge "$WARN_PCT" ]; then
+    [ "$EXIT" -lt 1 ] && { VERDICT="warned_time"; EXIT=1; }
+    WARNINGS+=("time at ${TIME_PCT}% of cap (${TIME_USED}s/${TIME_CAP}s)")
+  fi
+fi
+
+if [ "$TOKENS_CAP" != "null" ]; then
+  TOKEN_PCT=$(awk -v u="$TOKENS_USED" -v c="$TOKENS_CAP" 'BEGIN{if (c==0) print 0; else printf "%d", (u*100)/c}')
+  TOKEN_OVER=$(awk -v u="$TOKENS_USED" -v c="$TOKENS_CAP" 'BEGIN{print (u >= c) ? 1 : 0}')
+  if [ "$TOKEN_OVER" = "1" ]; then
+    VERDICT="halted_tokens"
+    EXIT=2
+    WARNINGS+=("tokens exceeded: \$${TOKENS_USED}/\$${TOKENS_CAP}")
+  elif [ "$TOKEN_PCT" -ge "$WARN_PCT" ]; then
+    [ "$EXIT" -lt 1 ] && { VERDICT="warned_tokens"; EXIT=1; }
+    WARNINGS+=("tokens at ${TOKEN_PCT}% of cap (\$${TOKENS_USED}/\$${TOKENS_CAP})")
+  fi
+fi
+
+write_status "$TIME_USED" "$TIME_CAP" "$TOKENS_USED" "$TOKENS_CAP" "$VERDICT"
+
+case "$MODE" in
+  check_time|check_tokens|check_both|status)
+    if [ "$MODE" = "status" ] || [ ${#WARNINGS[@]} -gt 0 ]; then
+      printf '{"verdict":"%s","time_used":%s,"time_cap":%s,"tokens_used":%s,"tokens_cap":%s,"warnings":[' \
+        "$VERDICT" "$TIME_USED" "$TIME_CAP" "$TOKENS_USED" "$TOKENS_CAP"
+      sep=""
+      if [ ${#WARNINGS[@]} -gt 0 ]; then
+        for w in "${WARNINGS[@]}"; do
+          printf '%s"%s"' "$sep" "$w"
+          sep=","
+        done
+      fi
+      printf ']}\n'
+    fi
+    ;;
+  *)
+    echo "ERROR: unknown mode: $MODE" >&2
+    exit 2
+    ;;
+esac
+
+exit "$EXIT"
