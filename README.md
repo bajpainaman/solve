@@ -449,6 +449,36 @@ Output lands at `.context/solve-<slug>.md` in the current project.
 
 ---
 
+## Budget gating (v0.5.0+)
+
+`/solve` can spawn 11 concurrent teammates and 30+ research queries. Cap that upfront:
+
+```bash
+solve --budget time=15min tokens=$5 "should we ship X by Friday"
+solve --budget time=1h "can we afford to migrate Y this quarter"
+solve --budget tokens=$1 "narrow question"
+```
+
+Time options: `5min` / `15min` / `30min` / `1h` / `unlimited`. Tokens: `$1` / `$5` / `$20` / `unlimited`. Either or both axes. Without `--budget`, the skill asks at run start.
+
+Caps are enforced at framework boundaries. At 80% of either cap, all teammates wrap up current work. At 100%, the entire run halts cleanly with a partial report and resume instructions.
+
+Plus per-tool, per-teammate caps (5 calls of any single tool). 6th call halts the run. Catches loop bugs without penalizing legitimate work.
+
+## Calibration drift (v0.5.0+)
+
+The HIGH/MED/LOW confidence bucket is mathematically clean but only as good as its base rates. After enough real runs, HIGH might silently mean "matrix had a clear winner but reality didn't agree." `/solve` tracks every run's outcome and detects this drift.
+
+```bash
+solve --calibrate status   # ledger summary + HIGH success rate
+solve --calibrate audit    # force re-audit
+solve --calibrate reset    # revert thresholds
+```
+
+After each run, the ledger appends a row with `outcome: TBD`. Next time you run `/solve`, if the prior run was HIGH-bucket and old enough (3-30 days), the skill asks how it shipped. Auto-detects shipped recommendations via git log scan as a hint (you always confirm).
+
+When HIGH success rate drops below 70% over ≥ 10 settled runs, the skill auto-raises the rubric requirement (8 → 9) and surfaces the warning at next run start AND in the next run's Dissent section. Reset with `solve --calibrate reset`.
+
 ## The 25 frameworks at a glance
 
 | Phase | # | Framework | Run condition | Length |

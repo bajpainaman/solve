@@ -5,8 +5,63 @@ All notable changes to `/solve` are documented here. The format follows [Keep a 
 ## [Unreleased]
 
 ### Pending
-- Deepen remaining 11 framework files: ishikawa, inversion-define, iceberg, connection-circles, eisenhower, impact-effort, ladder-of-inference, ooda-loop, hard-choice, six-hats, minto. Agent fan-out in flight.
-- Self-tag releases on GitHub for pinned-curl installs (`bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/v0.3.0/install)`).
+- Self-tag releases on GitHub for pinned-curl installs (`bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/v0.5.0/install)`).
+- frameworks/minto.md: surface calibration drift warning in Dissent section (planned for v0.5.1).
+
+## [0.5.0] — 2026-05-04
+
+### Added
+
+- **Step 0.6 — Budget intake** (after regime classifier, before preamble; runs only if `regime = decision`).
+  AskUserQuestion for time + tokens budget. Time options: 5min / 15min / 30min / 1hr / unlimited. Token options: $1 / $5 / $20 / unlimited. User picks one or both. Both null = unlimited (backward compat).
+  `bin/budget-track` enforces both axes between framework boundaries: warns at 80%, halts entire run at 100%.
+
+- **Step 0.7 — Calibration check + audit** (after budget; runs only if `regime = decision`).
+  Reads `~/.gstack/calibration.jsonl` ledger. If most-recent HIGH-bucket entry is 3-30 days old and outcome is TBD, asks the user "did it ship?" and updates the ledger. Auto-detects shipped recommendation via git log scan as a hint (user always confirms).
+  Drift audit: if HIGH success rate < 70% over ≥ 10 settled HIGH runs, raise rubric requirement from 8 to 9 automatically. Warning surfaced at next run start AND in next run's Dissent section. User can revert with `solve --calibrate reset`.
+
+- **Step 8.5 — Tool-call cap enforcement** (non-negotiable guardrail).
+  Each teammate has a counter file at `$RUN_DIR/teammate-counters/<name>.json` tracking calls per tool (Bash/Read/Write/Edit/Glob/Grep/WebSearch/WebFetch). Hit 6 of any single tool = halt entire run. Adversary is exempt from the Read cap (it watches every framework file, legitimately needs many reads). Hat teammates get fresh counters per spawn.
+  Rationale: catches loop bugs (a teammate retrying the same Bash command) without penalizing legitimate work (a definer reading 8 framework specs).
+
+- **AskUserQuestion auto-conversion** (in adversary brief).
+  Adversary scans framework outputs for prose questions ending in `?`. Writes `$RUN_DIR/pending-questions/<framework>-<n>.json` for each non-rhetorical question. Lead polls between framework boundaries, invokes AskUserQuestion, relays answer to originating teammate via SendMessage, deletes the pending file.
+  Rhetorical filter: questions containing "this means" / "obviously" / "of course" are skipped. Framework templates can opt out with `<!-- skip-question-scan -->`.
+
+- **`solve --calibrate <subcommand>`** routes to the new bin/calibration helper. Subcommands: status, audit, reset, log, log-outcome, detect-shipped, pending-followup.
+
+- **`solve --budget`** flag pre-seeds Step 0.6 answers, skipping the AskUserQuestion. Format: `solve --budget time=15min tokens=$5 "<problem>"`. Either or both axes optional.
+
+- **`solve status`** (already in 0.4.0) now prints v0.5.0.
+
+- **`bin/budget-track`** new helper — wallclock + token spend tracker with per-tool, per-teammate caps. Output: JSON status with verdict (under_cap / warned_time / warned_tokens / halted_time / halted_tokens / unlimited).
+
+- **`bin/calibration`** new helper — append-only ledger + drift audit. ~150 lines covering log/log-outcome/status/audit/reset/detect-shipped/pending-followup.
+
+### Changed
+
+- **SKILL.md** grew from 944 to 1332 lines.
+- **Adversary brief** now includes the question auto-conversion protocol AND a Read-exempt cap-tracking note.
+- **All 4 non-adversary teammate briefs** now end with the TOOL CALL CAP instruction block.
+- **Step 8 (Communication Protocol)** now describes the lead's pending-questions polling loop and budget-track polling loop between framework boundaries.
+- **Step 16 (Cost + Telemetry)** now appends a calibration ledger row at end of each completed run with `outcome: TBD`.
+- **install** smoke tests now verify all 7 bins (added budget-track + calibration to the loop).
+
+### Fixed (carried forward from v0.4.0 patches)
+
+- Framework count smoke test correctly excludes `_TEMPLATE.md` (was warning "framework count != 25").
+- `solve update` typo (without `--`) now triggers the updater, not the skill on the word.
+- `parallel-setup` removed the wrong sk-/pk- prefix warning; added length sanity check; "Store anyway?" prompt now masks the buffer and explicitly tells the user not to paste the key again.
+
+### Architecture rationale
+
+The v0.5.0 changes close 3 loops the v0.4.0 install run exposed:
+1. **No budget guardrails** → runs could spiral on edge cases. Now: hard halt with clear restart instructions.
+2. **No tool-call caps** → a stuck teammate could burn the budget alone. Now: 6 of any tool = halt.
+3. **Calibration drift was invisible** → HIGH bucket could silently mean "matrix winner but world disagreed." Now: ledger + 70% threshold + auto-shift + dissent surface.
+
+The fourth piece (AskUserQuestion auto-conversion) is preventive: teammates occasionally write inline prose questions that get lost. Now the adversary catches them and the lead routes through proper UI.
+
 
 ## [0.3.0] — 2026-05-03
 
@@ -86,7 +141,8 @@ All notable changes to `/solve` are documented here. The format follows [Keep a 
 - Output formats: pyramid (Minto top-down), build-up, tldr.
 - Soft cost cap at $5 of API spend.
 
-[Unreleased]: https://github.com/bajpainaman/solve/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/bajpainaman/solve/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/bajpainaman/solve/compare/v0.3.0...v0.5.0
 [0.3.0]: https://github.com/bajpainaman/solve/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/bajpainaman/solve/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/bajpainaman/solve/compare/v0.1.0...v0.2.0

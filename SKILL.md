@@ -1,6 +1,6 @@
 ---
 name: solve
-version: 0.4.0
+version: 0.5.0
 description: |
   Strategic problem solver. FIRST runs a regime classifier (Step 0.5) that routes the
   question: knowledge → answer inline, bug → /investigate, idea → /office-hours, decision
@@ -229,6 +229,151 @@ If the lead finds itself reading a framework spec file or writing framework anal
 - Step 0.5 ran and `regime = decision` confirmed: +0 (baseline; expected behavior)
 - Step 0.5 ran and `regime = knowledge|bug|idea` (handoff or redirect): N/A (rubric doesn't apply; /solve didn't run)
 - Step 0.5 was skipped (SPAWNED_SESSION + auto-decision): +0 (baseline; trust orchestrator)
+
+---
+
+## Step 0.6 — Budget Intake (run only if regime = decision)
+
+A /solve run can spawn 11 concurrent teammates and 30+ research queries. That can burn $5+ and 30+ minutes. Step 0.6 caps both axes upfront and halts the run if either is exceeded.
+
+Skip this step if:
+- `regime ≠ decision` (Step 0.5 routed to a lighter path)
+- `SPAWNED_SESSION = true` (orchestrator decides budget; default unlimited)
+
+Otherwise, AskUserQuestion in a single batch with two questions:
+
+> **Question 1: Time budget for this run?**
+> - 5 minutes (rapid; minimal research, smallest team)
+> - 15 minutes (standard quick run)
+> - 30 minutes (default for most decisions)
+> - 1 hour (deep research; full 25 frameworks comfortably)
+> - Unlimited (no time cap)
+
+> **Question 2: Token budget for this run?**
+> - $1 (lean; mostly cached evidence + minimal Parallel.ai queries)
+> - $5 (standard; soft-warns at $4)
+> - $20 (deep research; aggressive parallel queries OK)
+> - Unlimited (no spend cap)
+
+Persist both as `state.json::budget`:
+
+```bash
+TIME_SECONDS=$(case "$TIME_CHOICE" in
+  "5 minutes") echo 300 ;;
+  "15 minutes") echo 900 ;;
+  "30 minutes") echo 1800 ;;
+  "1 hour") echo 3600 ;;
+  *) echo "null" ;;
+esac)
+TOKENS_USD=$(case "$TOKEN_CHOICE" in
+  "\$1") echo 1 ;;
+  "\$5") echo 5 ;;
+  "\$20") echo 20 ;;
+  *) echo "null" ;;
+esac)
+~/.claude/skills/solve/bin/state-rw write "$RUN_DIR" budget "{\"time_seconds\":$TIME_SECONDS,\"tokens_usd\":$TOKENS_USD}"
+echo "BUDGET: time=${TIME_SECONDS}s, tokens=\$${TOKENS_USD}"
+```
+
+### Enforcement protocol
+
+The lead checks budget between framework boundaries (after each completed framework file). One bash call:
+
+```bash
+export RUN_DIR
+export SOLVE_COST_FILE
+export TEL_START="$_TEL_START"
+~/.claude/skills/solve/bin/budget-track --check both --run-dir "$RUN_DIR"
+```
+
+Exit codes:
+- `0` = under cap, continue normally
+- `1` = warned (≥ 80% of either cap). SendMessage to all teammates: "Budget at 80%. Wrap up current framework; do not start new ones."
+- `2` = halted (cap exceeded). The lead must:
+  1. SendMessage shutdown to every teammate
+  2. Render a partial report to `.context/solve-<slug>.md` with whatever frameworks completed
+  3. Append a `## Halted At Budget` section explaining `verdict: halted_time | halted_tokens`, what was complete, what's missing
+  4. Set `state.json::partial = true` so next run can resume
+  5. Surface to user: `solve halted: <time/tokens> exceeded. Run with bigger budget: solve --budget time=1h tokens=$20 "<problem>"`
+  6. TeamDelete; log telemetry with `outcome: halted_on_cap`
+
+The CLI shim's `--budget` flag pre-seeds Step 0.6 answers (skipping the AskUserQuestion in that case).
+
+### Backward compat
+
+If state.json::budget is missing or both fields are null, all checks default to unlimited. Existing runs (started before v0.5.0) continue working without budget gating.
+
+---
+
+## Step 0.7 — Calibration Check + Audit (run only if regime = decision)
+
+Skip if `regime ≠ decision` or `SPAWNED_SESSION = true`.
+
+### Pending followup (HIGH-bucket outcome verification)
+
+The calibration ledger at `~/.gstack/calibration.jsonl` accumulates one row per completed /solve run with `outcome: TBD`. The most-recent HIGH-bucket entry that's 3-30 days old gets a follow-up question this run:
+
+```bash
+PENDING=$(~/.claude/skills/solve/bin/calibration pending-followup)
+if [ "$PENDING" != "{}" ]; then
+  PENDING_SLUG=$(echo "$PENDING" | python3 -c "import json,sys;print(json.load(sys.stdin).get('slug',''))")
+  PENDING_REC=$(echo "$PENDING" | python3 -c "import json,sys;print(json.load(sys.stdin).get('recommendation_summary',''))")
+  PENDING_TS=$(echo "$PENDING" | python3 -c "import json,sys;print(json.load(sys.stdin).get('ts_completed_iso',''))")
+  echo "PENDING_FOLLOWUP: slug=$PENDING_SLUG since=$PENDING_TS"
+
+  # Auto-detect git evidence (hint, not decision)
+  EVIDENCE=$(~/.claude/skills/solve/bin/calibration detect-shipped "$PENDING_SLUG")
+fi
+```
+
+If `PENDING_SLUG` is non-empty, AskUserQuestion (skip if `SPAWNED_SESSION`):
+
+> Last /solve run was HIGH bucket on `<PENDING_SLUG>` (`<PENDING_TS>`).
+> Recommendation: `<PENDING_REC>`.
+> `<if EVIDENCE.detected: "I see git commits matching this since <date>. Confirm shipped?">`
+> How did it go?
+
+Options:
+- A) Shipped, success
+- B) Shipped, mixed (partial wins, partial losses)
+- C) Shipped, failure
+- D) Not yet shipped, still in progress
+- E) Aborted, didn't ship
+
+Map answer to ledger:
+```bash
+OUTCOME=$(case "$ANSWER" in
+  A) echo "success" ;;
+  B) echo "mixed" ;;
+  C) echo "failure" ;;
+  D) skip_log_outcome=1; echo "" ;;   # leave as TBD
+  E) echo "aborted" ;;
+esac)
+[ -z "${skip_log_outcome:-}" ] && \
+  ~/.claude/skills/solve/bin/calibration log-outcome "$PENDING_SLUG" "$OUTCOME"
+```
+
+### Drift audit
+
+After updating the outcome (or if no pending followup but ledger has ≥ 10 settled HIGH entries):
+
+```bash
+AUDIT=$(~/.claude/skills/solve/bin/calibration audit)
+echo "$AUDIT"
+DRIFT_DETECTED=$(echo "$AUDIT" | python3 -c "import json,sys;d=json.load(sys.stdin);print('1' if d.get('drift_detected') else '0')")
+```
+
+If `DRIFT_DETECTED = 1`:
+1. Surface warning to user via prose (not AskUserQuestion; this is informational):
+   > "Calibration drift detected. HIGH-bucket success rate is `<X>%` over your last `<N>` settled runs. The recommendations the math says are HIGH are not shipping cleanly. I've raised the HIGH threshold from `rubric ≥ 8` to `rubric ≥ <new>`. Treat this run's recommendation with extra skepticism."
+2. The threshold raise is automatic and persisted to `~/.gstack/calibration-config.json`. User can revert later with `solve --calibrate reset`.
+3. Set `state.json::drift_warning` to the warning text.
+4. Minto framework reads this in Step 12 and surfaces it in the Dissent section.
+5. gstack-learnings-log: `{"type": "calibration_drift", "high_success_rate_pct": X, "threshold_raised_to": <new>}`.
+
+### Backward compat
+
+First-time runs (empty ledger) skip both followup and audit. Each completed run appends a row in Step 16.
 
 ---
 
@@ -497,6 +642,14 @@ Your job: layered parallel web research. For each task you claim:
 
 Cost discipline: increment $SOLVE_COST_FILE for each external API call.
 If running total exceeds $5, SendMessage to lead asking for green-light.
+TOOL CALL CAP (NON-NEGOTIABLE):
+You have a counter file at $RUN_DIR/teammate-counters/<your-name>.json.
+Before EVERY tool call, increment the matching counter. If new value >= 6,
+do NOT make the call. Instead, SendMessage to lead with:
+  {"type": "cap_violation", "tool": "<Bash|Read|Write|Edit|Glob|Grep|WebSearch|WebFetch>",
+   "count": 6, "framework": "<current framework name or 'none'>"}
+Lead halts the entire run on cap_violation. This protects the user's budget.
+
 ```
 
 ### Definer brief
@@ -548,6 +701,14 @@ Decisions: <one-line>
 Remaining: <what's left in phase 1>
 Skill: /solve
 [/gstack-context]"
+TOOL CALL CAP (NON-NEGOTIABLE):
+You have a counter file at $RUN_DIR/teammate-counters/<your-name>.json.
+Before EVERY tool call, increment the matching counter. If new value >= 6,
+do NOT make the call. Instead, SendMessage to lead with:
+  {"type": "cap_violation", "tool": "<Bash|Read|Write|Edit|Glob|Grep|WebSearch|WebFetch>",
+   "count": 6, "framework": "<current framework name or 'none'>"}
+Lead halts the entire run on cap_violation. This protects the user's budget.
+
 ```
 
 ### Systems-thinker brief
@@ -580,6 +741,14 @@ REPO_MODE handling:
 
 Context Health: write a [PROGRESS] line to lead between frameworks:
   "[PROGRESS] iceberg done (3 cycles seeded). connection-circles next."
+TOOL CALL CAP (NON-NEGOTIABLE):
+You have a counter file at $RUN_DIR/teammate-counters/<your-name>.json.
+Before EVERY tool call, increment the matching counter. If new value >= 6,
+do NOT make the call. Instead, SendMessage to lead with:
+  {"type": "cap_violation", "tool": "<Bash|Read|Write|Edit|Glob|Grep|WebSearch|WebFetch>",
+   "count": 6, "framework": "<current framework name or 'none'>"}
+Lead halts the entire run on cap_violation. This protects the user's budget.
+
 ```
 
 ### Decider brief
@@ -612,6 +781,14 @@ CONFUSION PROTOCOL:
   confidence.
 
 Context Health: [PROGRESS] line per framework completion.
+TOOL CALL CAP (NON-NEGOTIABLE):
+You have a counter file at $RUN_DIR/teammate-counters/<your-name>.json.
+Before EVERY tool call, increment the matching counter. If new value >= 6,
+do NOT make the call. Instead, SendMessage to lead with:
+  {"type": "cap_violation", "tool": "<Bash|Read|Write|Edit|Glob|Grep|WebSearch|WebFetch>",
+   "count": 6, "framework": "<current framework name or 'none'>"}
+Lead halts the entire run on cap_violation. This protects the user's budget.
+
 ```
 
 ### Adversary brief
@@ -634,6 +811,26 @@ Voice enforcement: if a framework output uses any of these AI words, flag it:
   showcase, intricate, vibrant, fundamental, significant.
 SendMessage to owner: "voice violation: <word> at <line>. Rewrite without it."
 
+QUESTION AUTO-CONVERSION (NEW IN v0.5.0):
+While reading framework outputs, scan for prose questions that should have
+gone through AskUserQuestion. A line is a candidate question if:
+  - It ends with '?'
+  - It is in active voice (not buried inside a quote or markdown table)
+  - It does NOT contain "this means" / "obviously" / "of course" (rhetorical)
+  - It does NOT have <!-- skip-question-scan --> on the line
+For each candidate, write a pending-questions file:
+  $RUN_DIR/pending-questions/<framework>-<seq>.json
+Schema: {"from": "<framework owner teammate>", "framework": "<name>",
+         "question": "<exact text>", "context": "<surrounding 2 lines>"}
+The lead polls $RUN_DIR/pending-questions/ between framework boundaries,
+calls AskUserQuestion for each, relays the answer back via SendMessage,
+then deletes the pending file.
+
+TOOL CALL CAP (READ-EXEMPT):
+You're exempt from the Read cap (you read every framework file). Counters
+for Bash/Write/Edit/Glob/Grep/WebSearch/WebFetch still apply at 6.
+SendMessage cap_violation to lead if you hit 6 of any non-Read tool.
+
 Continue until lead sends `{"type":"shutdown_request"}`.
 ```
 
@@ -647,6 +844,99 @@ Continue until lead sends `{"type":"shutdown_request"}`.
 - **Adversary → owner**: SendMessage when adversarial score >= 7 OR voice violation detected.
 
 All teammates **must** mark tasks `completed` via TaskUpdate when done.
+
+### Lead pending-questions polling (NEW IN v0.5.0)
+
+Between framework boundaries, lead checks `$RUN_DIR/pending-questions/`:
+
+```bash
+if [ -d "$RUN_DIR/pending-questions" ]; then
+  for q_file in "$RUN_DIR/pending-questions"/*.json; do
+    [ -f "$q_file" ] || continue
+    Q_FROM=$(python3 -c "import json;print(json.load(open('$q_file'))['from'])")
+    Q_TEXT=$(python3 -c "import json;print(json.load(open('$q_file'))['question'])")
+    Q_FRAMEWORK=$(python3 -c "import json;print(json.load(open('$q_file'))['framework'])")
+    # Lead invokes AskUserQuestion with Q_TEXT, gets response
+    # SendMessage to Q_FROM with the answer
+    # rm "$q_file"
+  done
+fi
+```
+
+The adversary teammate writes these files when scanning framework outputs (see Adversary brief in Step 7).
+
+### Lead budget polling (NEW IN v0.5.0)
+
+Between framework boundaries, lead also runs:
+
+```bash
+~/.claude/skills/solve/bin/budget-track --check both --run-dir "$RUN_DIR"
+```
+
+Exit 1 (warned at 80%): SendMessage to all teammates to wrap up. Exit 2 (halted): trigger halt protocol from Step 0.6.
+
+---
+
+## Step 8.5 — Tool-Call Cap Enforcement (NON-NEGOTIABLE GUARDRAIL)
+
+Each teammate is capped at **5 calls of any single tool**. Hit 6 of any one tool = halt the entire /solve run.
+
+### Why per-tool, not cumulative
+
+A definer running 8 frameworks legitimately needs 8 Read calls (one per framework spec). A definer making 8 Bash calls is stuck in a loop. Per-tool caps catch the loop without penalizing legitimate work.
+
+### Counter mechanics
+
+Each teammate maintains a counter file at `$RUN_DIR/teammate-counters/<name>.json`:
+
+```json
+{"bash": 0, "read": 0, "write": 0, "edit": 0, "glob": 0, "grep": 0, "websearch": 0, "webfetch": 0}
+```
+
+**Before every tool call**, the teammate:
+1. Reads its counter file
+2. Increments the counter for the tool it's about to use
+3. If the new value is ≥ 6: do NOT make the call. Instead, SendMessage to lead:
+   ```
+   {"type": "cap_violation", "tool": "Bash", "count": 6, "framework": "<current>"}
+   ```
+4. If under cap: write incremented counter back, make the call
+
+### Lead's response to cap_violation
+
+Receiving a cap_violation message triggers the halt protocol:
+1. SendMessage shutdown to all teammates immediately
+2. Render partial report at `.context/solve-<slug>.md` with whatever frameworks completed
+3. Append a `## Halted On Cap Violation` section explaining which teammate hit which cap
+4. Set `state.json::partial = true` and `state.json::halt_reason = "cap_violation_<tool>"`
+5. Surface to user:
+   > "/solve halted: teammate `<name>` hit 6 calls on `<tool>` while working on `<framework>`. This is the cap to prevent runaway loops. To continue, restart with: `solve --budget time=1h tokens=$20 --skip-frameworks <completed-list> '<problem>'`"
+6. TeamDelete; log telemetry: `outcome: halted_cap_violation`
+
+### Adversary exemption
+
+The adversary teammate is exempt from the **Read cap only** (it watches every framework file as it's written, which legitimately requires 25+ reads). All other tool caps apply. The adversary's counter file omits the `read` field entry for tracking.
+
+### Hat teammate caps (Phase 3)
+
+Each hat teammate (white/red/black/yellow/green/blue) is short-lived (writes one file, idles). They get fresh counters per spawn. Hat caps still apply but rarely matter in practice.
+
+### Verification at run start
+
+Lead initializes counter files at Step 7 (after spawning teammates):
+
+```bash
+mkdir -p "$RUN_DIR/teammate-counters"
+for name in researcher definer systems-thinker decider adversary; do
+  echo '{"bash":0,"read":0,"write":0,"edit":0,"glob":0,"grep":0,"websearch":0,"webfetch":0}' \
+    > "$RUN_DIR/teammate-counters/$name.json"
+done
+# Adversary is read-exempt; mark with sentinel
+echo '{"bash":0,"read":-1,"write":0,"edit":0,"glob":0,"grep":0,"websearch":0,"webfetch":0}' \
+  > "$RUN_DIR/teammate-counters/adversary.json"
+```
+
+(Read = -1 means "not tracked"; teammates check `if count != -1 && count >= 6`.)
 
 ---
 
@@ -832,6 +1122,14 @@ _TEL_DUR=$(( _TEL_END - _TEL_START ))
 if [ "$_TEL" != "off" ]; then
   echo '{"skill":"solve","duration_s":"'"$_TEL_DUR"'","outcome":"success","session":"'"$_SESSION_ID"'","cost_usd":"'"$_COST"'","ts":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' \
     >> ~/.gstack/analytics/skill-usage.jsonl 2>/dev/null || true
+fi
+
+# Calibration ledger (NEW IN v0.5.0): append a TBD-outcome row for this run.
+# Future runs ask the user about the outcome; the ledger drives drift detection.
+if [ "$_REGIME" = "decision" ] && [ -n "${_BUCKET:-}" ]; then
+  ~/.claude/skills/solve/bin/calibration log \
+    "$SOLVE_SLUG" "$_SESSION_ID" "$_BUCKET" "${_RUBRIC:-null}" "${_POSTERIOR:-null}" \
+    "${_RECOMMENDATION_SUMMARY:-(rendered)}" 2>/dev/null || true
 fi
 
 # Remote telemetry (opt-in)

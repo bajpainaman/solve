@@ -74,6 +74,16 @@ PY
     echo "Uninstalled. Note: ~/.gstack/parallel-api-key and ~/.claude/settings.json env left intact."
     exit 0
     ;;
+  calibrate|--calibrate)
+    # solve calibrate <subcommand>
+    if [ ! -x "$SKILL/bin/calibration" ]; then
+      echo "ERROR: calibration helper missing at $SKILL/bin/calibration" >&2
+      echo "Run: solve --update" >&2
+      exit 1
+    fi
+    shift
+    exec "$SKILL/bin/calibration" "$@"
+    ;;
   status|--status|version|--version|-V)
     SKILL_VER=$(grep -E '^version:' "$SKILL/SKILL.md" 2>/dev/null | head -1 | awk '{print $2}')
     echo "solve CLI shim:   $0"
@@ -104,8 +114,38 @@ esac
 # guarantees /solve sees it no matter how the user got to this shim.
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
-if [ $# -eq 0 ]; then
+# --budget flag pre-seeds Step 0.6 (budget intake) so the skill skips the
+# interactive AskUserQuestion. Format: --budget time=15min tokens=$5
+# Either or both can be specified. Unrecognized values are ignored.
+PRESEED_ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --budget)
+      shift
+      while [ $# -gt 0 ] && [[ "$1" =~ ^(time|tokens)= ]]; do
+        case "$1" in
+          time=5min|time=300)         export SOLVE_PRESEED_TIME=300; shift ;;
+          time=15min|time=900)        export SOLVE_PRESEED_TIME=900; shift ;;
+          time=30min|time=1800)       export SOLVE_PRESEED_TIME=1800; shift ;;
+          time=1h|time=60min|time=3600) export SOLVE_PRESEED_TIME=3600; shift ;;
+          time=unlimited|time=null)   export SOLVE_PRESEED_TIME=null; shift ;;
+          tokens=\$1|tokens=1)        export SOLVE_PRESEED_TOKENS=1; shift ;;
+          tokens=\$5|tokens=5)        export SOLVE_PRESEED_TOKENS=5; shift ;;
+          tokens=\$20|tokens=20)      export SOLVE_PRESEED_TOKENS=20; shift ;;
+          tokens=unlimited|tokens=null) export SOLVE_PRESEED_TOKENS=null; shift ;;
+          *) shift ;;
+        esac
+      done
+      ;;
+    *)
+      PRESEED_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [ ${#PRESEED_ARGS[@]} -eq 0 ]; then
   exec claude "/solve"
 else
-  exec claude "/solve $*"
+  exec claude "/solve ${PRESEED_ARGS[*]}"
 fi
