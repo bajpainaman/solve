@@ -135,6 +135,13 @@ export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 PRESEED_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
+    --tier)
+      shift
+      case "$1" in
+        quick|standard|deep) export SOLVE_PRESEED_TIER="$1"; shift ;;
+        *)                   echo "ERROR: --tier must be quick|standard|deep" >&2; exit 2 ;;
+      esac
+      ;;
     --budget)
       shift
       while [ $# -gt 0 ] && [[ "$1" =~ ^(time|tokens)= ]]; do

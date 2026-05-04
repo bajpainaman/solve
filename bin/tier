@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# tier — return the framework list for a /solve tier (quick|standard|deep)
+#
+# Usage:
+#   tier <name>              prints space-separated framework list for that tier
+#   tier <name> --json       prints JSON object with phase breakdown
+#   tier <name> --count      prints just the count
+#   tier <name> --in <fw>    exit 0 if framework is in tier, 1 otherwise
+#   tier list                list all tiers + counts
+#   tier defaults <name>     prints default budget for tier (time_seconds tokens_usd)
+#
+# Tiers (all subsets of the 25 frameworks):
+#   quick     8 frameworks  ~15-20 min  $1-2  (load-bearing only)
+#   standard 16 frameworks  ~30-40 min  $3-5  (drops conditional + low-leverage)
+#   deep     25 frameworks  ~50-70 min  $5-15 (full workflow)
+
+set -euo pipefail
+
+# Tier definitions (must stay in sync with SKILL.md framework lists)
+QUICK_DEFINE="first-principles issue-tree inversion-define"
+QUICK_SYSTEMS="iceberg"
+QUICK_DECIDE="cynefin decision-matrix six-hats minto"
+
+STANDARD_DEFINE="$QUICK_DEFINE abstraction-ladder zwicky-box productive-thinking"
+STANDARD_SYSTEMS="$QUICK_SYSTEMS connection-circles concept-map"
+STANDARD_DECIDE="$QUICK_DECIDE eisenhower second-order confidence-speed-quality"
+
+DEEP_DEFINE="$STANDARD_DEFINE ishikawa conflict-resolution-diagram"
+DEEP_SYSTEMS="$STANDARD_SYSTEMS balancing-loop reinforcing-loop"
+DEEP_DECIDE="$STANDARD_DECIDE impact-effort ladder-of-inference ooda-loop hard-choice sbi"
+
+tier_define() {
+  case "$1" in
+    quick)    echo "$QUICK_DEFINE" ;;
+    standard) echo "$STANDARD_DEFINE" ;;
+    deep)     echo "$DEEP_DEFINE" ;;
+    *)        echo "" ;;
+  esac
+}
+tier_systems() {
+  case "$1" in
+    quick)    echo "$QUICK_SYSTEMS" ;;
+    standard) echo "$STANDARD_SYSTEMS" ;;
+    deep)     echo "$DEEP_SYSTEMS" ;;
+    *)        echo "" ;;
+  esac
+}
+tier_decide() {
+  case "$1" in
+    quick)    echo "$QUICK_DECIDE" ;;
+    standard) echo "$STANDARD_DECIDE" ;;
+    deep)     echo "$DEEP_DECIDE" ;;
+    *)        echo "" ;;
+  esac
+}
+tier_all() {
+  echo "$(tier_define $1) $(tier_systems $1) $(tier_decide $1)" | tr -s ' '
+}
+
+tier_defaults() {
+  case "$1" in
+    quick)    echo "900 2" ;;       # 15 min, $2
+    standard) echo "1800 5" ;;      # 30 min, $5
+    deep)     echo "3600 15" ;;     # 1h, $15
+    *)        echo "null null" ;;
+  esac
+}
+
+case "${1:-}" in
+  quick|standard|deep)
+    TIER="$1"
+    case "${2:-}" in
+      --json)
+        D=$(tier_define "$TIER")
+        S=$(tier_systems "$TIER")
+        P=$(tier_decide "$TIER")
+        DC=$(echo "$D" | wc -w | tr -d ' ')
+        SC=$(echo "$S" | wc -w | tr -d ' ')
+        PC=$(echo "$P" | wc -w | tr -d ' ')
+        TOTAL=$((DC + SC + PC))
+        printf '{"tier":"%s","total":%d,"define":["%s"],"systems":["%s"],"decide":["%s"],"counts":{"define":%d,"systems":%d,"decide":%d}}\n' \
+          "$TIER" "$TOTAL" \
+          "$(echo $D | sed 's/ /","/g')" \
+          "$(echo $S | sed 's/ /","/g')" \
+          "$(echo $P | sed 's/ /","/g')" \
+          "$DC" "$SC" "$PC"
+        ;;
+      --count)
+        echo "$(tier_all "$TIER")" | wc -w | tr -d ' '
+        ;;
+      --in)
+        FW="${3:-}"
+        if [ -z "$FW" ]; then echo "ERROR: --in requires framework name" >&2; exit 2; fi
+        if echo "$(tier_all "$TIER")" | tr ' ' '\n' | grep -qx "$FW"; then exit 0; else exit 1; fi
+        ;;
+      --define) tier_define "$TIER" ;;
+      --systems) tier_systems "$TIER" ;;
+      --decide) tier_decide "$TIER" ;;
+      "") tier_all "$TIER" ;;
+      *) echo "ERROR: unknown subcommand: ${2:-}" >&2; exit 2 ;;
+    esac
+    ;;
+  list)
+    for t in quick standard deep; do
+      c=$("$0" "$t" --count)
+      d=$("$0" defaults "$t")
+      time_s=$(echo "$d" | cut -d' ' -f1)
+      tokens=$(echo "$d" | cut -d' ' -f2)
+      time_m=$((time_s / 60))
+      printf '%-9s %2d frameworks   default budget: %sm / $%s\n' "$t" "$c" "$time_m" "$tokens"
+    done
+    ;;
+  defaults)
+    [ $# -ge 2 ] || { echo "usage: tier defaults <quick|standard|deep>" >&2; exit 2; }
+    tier_defaults "$2"
+    ;;
+  -h|--help|help|"")
+    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    echo "unknown tier: $1" >&2
+    echo "options: quick / standard / deep / list / defaults" >&2
+    exit 2
+    ;;
+esac

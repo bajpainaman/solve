@@ -529,6 +529,28 @@ After each run, the ledger appends a row with `outcome: TBD`. Next time you run 
 
 When HIGH success rate drops below 70% over ≥ 10 settled runs, the skill auto-raises the rubric requirement (8 → 9) and surfaces the warning at next run start AND in the next run's Dissent section. Reset with `solve --calibrate reset`.
 
+## Tiers (v0.6.0+) — pick the depth
+
+A full Deep run does all 25 frameworks (~50-70 min). Most decisions don't need that.
+
+| Tier | Frameworks | Wallclock | Default budget |
+|---|---|---|---|
+| **Quick** | 8 | ~15-20 min | 15min / $2 |
+| **Standard** | 16 (default) | ~30-40 min | 30min / $5 |
+| **Deep** | 25 | ~50-70 min | 1h / $15 |
+
+```bash
+solve --tier quick "small decision"
+solve --tier standard "normal decision"            # or just `solve "..."`
+solve --tier deep --budget time=2h "one-way-door, high stakes"
+```
+
+Skip the question with `--tier <name>`. The skill asks at run start (Step 0.55) if no flag is set.
+
+The Quick tier runs only the load-bearing frameworks: First Principles + Issue Tree + Inversion (Define) + Iceberg (Systems) + Cynefin + Decision Matrix + Six Hats + Minto (Decide). You still get adversary, confidence math, and Minto synthesis. You don't get the conditional frameworks (Hard Choice, SBI, Conflict Resolution) or the low-leverage ones (Ishikawa, Concept Map, OODA cycle planning).
+
+Confidence rubric scales with tier: Quick caps at 6/10, Standard at 8/10, Deep at 10/10. Pick the tier that matches your stakes.
+
 ## Live progress (v0.5.1+)
 
 Between framework boundaries, /solve prints a multi-phase progress block:

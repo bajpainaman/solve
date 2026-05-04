@@ -319,7 +319,7 @@ step "6/7 smoke tests"
 [ -f "$DEST/SKILL.md" ]                    && ok "SKILL.md present"          || fail "SKILL.md missing"
 _FRAMEWORK_COUNT=$(find "$DEST/frameworks" -maxdepth 1 -name '*.md' -not -name '_TEMPLATE.md' 2>/dev/null | wc -l | tr -d ' ')
 [ "$_FRAMEWORK_COUNT" = "25" ] && ok "25 framework files" || warn "framework count = $_FRAMEWORK_COUNT (expected 25)"
-for b in parallel-research parallel-setup state-rw cost-track render-report budget-track calibration progress statusline; do
+for b in parallel-research parallel-setup state-rw cost-track render-report budget-track calibration progress statusline tier; do
   [ -x "$DEST/bin/$b" ] && ok "bin/$b executable" || fail "bin/$b missing or not executable"
 done
 [ -x "$SHIM" ] && ok "solve shim executable at $SHIM" || warn "solve shim missing"

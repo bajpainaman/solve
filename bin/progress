@@ -196,6 +196,37 @@ print(m)
   if [ -n "$latest" ]; then
     printf "Latest:         %s%s%s\n" "$C_CYAN" "$latest" "$C_RESET"
   fi
+
+  # ETA: if we have ≥ 2 frameworks done and a budget time, project remaining
+  local total_target=25
+  if [ -f "$RUN_DIR/state.json" ]; then
+    local tier_count
+    tier_count=$(python3 -c "
+import json
+try:
+  d = json.load(open('$RUN_DIR/state.json'))
+  t = d.get('tier')
+  if t in ('quick','standard','deep'):
+    counts = {'quick':8,'standard':16,'deep':25}
+    print(counts[t])
+  else:
+    print(25)
+except: print(25)
+" 2>/dev/null || echo 25)
+    total_target=$tier_count
+  fi
+
+  local total_done=$((d + s + p))
+  if [ "$total_done" -ge 2 ] && [ "${time_used:-0}" -gt 0 ] && [ "$total_done" -lt "$total_target" ]; then
+    local avg_per_fw=$(( ${time_used:-0} / total_done ))
+    local remaining=$((total_target - total_done))
+    local eta_seconds=$((avg_per_fw * remaining))
+    local eta_str
+    eta_str=$(format_seconds "$eta_seconds")
+    printf "ETA:            %s~%s%s remaining (%d/%d)\n" "$C_BOLD" "$eta_str" "$C_RESET" "$total_done" "$total_target"
+  elif [ "$total_done" -ge "$total_target" ]; then
+    printf "ETA:            %scomplete%s\n" "$C_GREEN" "$C_RESET"
+  fi
 }
 
 if [ "$WATCH" = "1" ]; then

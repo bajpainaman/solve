@@ -72,9 +72,24 @@ S=$(count_done "$SYSTEMS_FW")
 P=$(count_done "$DECIDE_FW")
 TOTAL=$((D + S + P))
 
+# Detect tier (affects total target for the bar)
+TIER=$(python3 -c "
+import json
+try:
+  d = json.load(open('$LATEST/state.json'))
+  print(d.get('tier','deep'))
+except: print('deep')
+" 2>/dev/null || echo deep)
+case "$TIER" in
+  quick)    TOTAL_TARGET=8 ;;
+  standard) TOTAL_TARGET=16 ;;
+  deep)     TOTAL_TARGET=25 ;;
+  *)        TOTAL_TARGET=25 ;;
+esac
+
 # 10-char mini bar
 WIDTH=10
-PCT=$(( (TOTAL * WIDTH) / 25 ))
+PCT=$(( (TOTAL * WIDTH) / TOTAL_TARGET ))
 [ "$PCT" -gt "$WIDTH" ] && PCT=$WIDTH
 BAR=""
 for ((i=0; i<PCT; i++)); do BAR="${BAR}█"; done
@@ -123,7 +138,7 @@ C_DIM=$(printf '\033[2m')
 C_RESET=$(printf '\033[0m')
 
 # Pick dot color based on completion
-if [ "$TOTAL" -ge 25 ]; then
+if [ "$TOTAL" -ge "$TOTAL_TARGET" ]; then
   DOT="${C_GREEN}●${C_RESET}"
 elif [ "$TOTAL" -ge 1 ]; then
   DOT="${C_CYAN}●${C_RESET}"
@@ -133,11 +148,11 @@ fi
 
 # Build the line: ● solve <slug> [████████░░] 17/25 decision-matrix • 10m/15m $2.45/$5
 # Single color per segment, no fancy split-coloring (was buggy on 0-fill bars)
-printf '%s solve %s%s%s [%s%s%s] %s%d/25%s' \
+printf '%s solve %s%s%s [%s%s%s] %s%d/%d%s' \
   "$DOT" \
   "$C_DIM" "$SLUG" "$C_RESET" \
   "$C_CYAN" "$BAR" "$C_RESET" \
-  "$C_CYAN" "$TOTAL" "$C_RESET"
+  "$C_CYAN" "$TOTAL" "$TOTAL_TARGET" "$C_RESET"
 
 if [ -n "$LATEST_FW" ] && [ "$TOTAL" -lt 25 ]; then
   printf ' %s%s%s' "$C_YELLOW" "$LATEST_FW" "$C_RESET"
@@ -146,4 +161,25 @@ fi
 if [ -n "$BUDGET" ]; then
   printf ' %s• %s%s' "$C_DIM" "$BUDGET" "$C_RESET"
 fi
+
+# ETA: project remaining time from per-framework average
+if [ "$TOTAL" -ge 2 ] && [ "$TOTAL" -lt "$TOTAL_TARGET" ]; then
+  TIME_USED=$(python3 -c "
+import json
+try:
+  d = json.load(open('$LATEST/state.json'))
+  print(d.get('budget_status',{}).get('time_used',0))
+except: print(0)
+" 2>/dev/null || echo 0)
+  if [ "$TIME_USED" -gt 0 ]; then
+    AVG=$((TIME_USED / TOTAL))
+    REMAIN=$((TOTAL_TARGET - TOTAL))
+    ETA=$((AVG * REMAIN))
+    if [ "$ETA" -lt 60 ]; then ETA_STR="${ETA}s"
+    elif [ "$ETA" -lt 3600 ]; then ETA_STR="$((ETA/60))m"
+    else ETA_STR="$((ETA/3600))h$(((ETA%3600)/60))m"; fi
+    printf ' %s~%s left%s' "$C_DIM" "$ETA_STR" "$C_RESET"
+  fi
+fi
+
 # Note: NO trailing newline — Claude Code joins with its own metadata

@@ -1,6 +1,6 @@
 ---
 name: solve
-version: 0.5.2
+version: 0.6.0
 description: |
   Strategic problem solver. FIRST runs a regime classifier (Step 0.5) that routes the
   question: knowledge → answer inline, bug → /investigate, idea → /office-hours, decision
@@ -229,6 +229,74 @@ If the lead finds itself reading a framework spec file or writing framework anal
 - Step 0.5 ran and `regime = decision` confirmed: +0 (baseline; expected behavior)
 - Step 0.5 ran and `regime = knowledge|bug|idea` (handoff or redirect): N/A (rubric doesn't apply; /solve didn't run)
 - Step 0.5 was skipped (SPAWNED_SESSION + auto-decision): +0 (baseline; trust orchestrator)
+
+---
+
+## Step 0.55 — Tier Pick (run only if regime = decision)
+
+A full `Deep` run (all 25 frameworks) takes ~50-70 min. Most strategic decisions don't need that depth. Step 0.55 lets the user pick the right tier.
+
+Skip this step if:
+- `regime ≠ decision` (Step 0.5 routed to a lighter path)
+- `SPAWNED_SESSION = true` (default to `standard`)
+- `SOLVE_PRESEED_TIER` env var is set (CLI shim's `--tier` flag bypassed the question)
+
+Otherwise, AskUserQuestion:
+
+> How deep should this /solve run go?
+>
+> - **Quick** — 8 frameworks (~15 min, ~$1-2). The load-bearing only: First Principles, Issue Tree, Inversion, Iceberg, Cynefin, Decision Matrix, Six Hats, Minto.
+> - **Standard** — 16 frameworks (~30 min, ~$3-5). Quick + Abstraction Ladder, Zwicky, Productive Thinking, Connection Circles, Concept Map, Eisenhower, Second-Order, Confidence-Speed-Quality. **Default for most decisions.**
+> - **Deep** — all 25 frameworks (~50-70 min, ~$5-15). Full workflow with Ishikawa, Conflict Resolution, Balancing/Reinforcing Loops, Impact-Effort, Ladder of Inference, OODA, Hard Choice, SBI added. Use for one-way-door decisions with high stakes.
+
+Persist to `state.json::tier`. Each phase's teammate filters its framework list against the tier:
+
+```bash
+TIER="${SOLVE_PRESEED_TIER:-${USER_PICK:-standard}}"
+~/.claude/skills/solve/bin/state-rw write "$RUN_DIR" tier "\"$TIER\""
+echo "TIER: $TIER ($(~/.claude/skills/solve/bin/tier "$TIER" --count) frameworks)"
+```
+
+### Tier-specific budget defaults
+
+If user picks tier but doesn't pass explicit `--budget` and Step 0.6 budget intake is using defaults:
+
+```bash
+read DEFAULT_TIME DEFAULT_TOKENS < <(~/.claude/skills/solve/bin/tier defaults "$TIER")
+# DEFAULT_TIME in seconds, DEFAULT_TOKENS in $
+```
+
+| Tier | Default time | Default tokens |
+|---|---|---|
+| Quick | 15 min | $2 |
+| Standard | 30 min | $5 |
+| Deep | 60 min | $15 |
+
+### How teammates use this
+
+Each teammate's brief (definer, systems-thinker, decider) reads `state.json::tier` and filters its framework list:
+
+```bash
+TIER=$(~/.claude/skills/solve/bin/state-rw read "$RUN_DIR" tier | tr -d '"')
+ALLOWED_FRAMEWORKS=$(~/.claude/skills/solve/bin/tier "$TIER" --define)  # or --systems / --decide
+```
+
+Frameworks not in the tier are skipped silently. The framework's entry-predicate evaluation includes a tier check at the top:
+
+```
+if framework NOT IN tier(state.tier): skip with reason "not in $TIER tier"
+```
+
+This means a Quick-tier run never spawns the conditional frameworks (Hard Choice, SBI, Conflict Resolution Diagram), never runs Ishikawa, etc. Faster wallclock, lower cost, with the trade-off that depth is reduced.
+
+### Confidence rubric impact
+
+Quick / Standard runs have an inherently lower max rubric (fewer +2's available):
+- Quick: max 6/10 (Cynefin = simple/complicated, Decision Matrix gap, Six Hats agreement — only 3 multipliers possible from completed frameworks)
+- Standard: max 8/10 (adds Second-Order downside check)
+- Deep: max 10/10 (full check)
+
+The Minto pyramid notes the tier in the Confidence section: "rubric 8/10 (Standard tier; Deep tier could push higher with Hard Choice + Ladder of Inference + Reinforcing Loop checks)."
 
 ---
 

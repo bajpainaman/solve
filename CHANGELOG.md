@@ -8,6 +8,73 @@ All notable changes to `/solve` are documented here. The format follows [Keep a 
 - Self-tag releases on GitHub for pinned-curl installs (`bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/v0.5.0/install)`).
 - frameworks/minto.md: surface calibration drift warning in Dissent section (planned for v0.5.1).
 
+## [0.6.0] — 2026-05-04
+
+### Added — tier picker (Step 0.55)
+
+A real-world run on a friend's machine took 45 min to reach 19/25 frameworks. Most strategic decisions don't need that depth. v0.6.0 adds three tiers:
+
+| Tier | Frameworks | Approx wallclock | Default budget |
+|---|---|---|---|
+| Quick | 8 (load-bearing only) | ~15-20 min | time=15min, $2 |
+| Standard | 16 (drops conditional + low-leverage) | ~30-40 min | time=30min, $5 |
+| Deep | all 25 | ~50-70 min | time=1h, $15 |
+
+**Standard is the default.** The skill asks at run start (Step 0.55, between regime classifier and budget intake). Skip the question with `solve --tier <name>` flag.
+
+Tier maps to a specific framework subset:
+- **Quick** — first-principles, issue-tree, inversion-define, iceberg, cynefin, decision-matrix, six-hats, minto
+- **Standard** — Quick + abstraction-ladder, zwicky-box, productive-thinking, connection-circles, concept-map, eisenhower, second-order, confidence-speed-quality
+- **Deep** — Standard + ishikawa, conflict-resolution-diagram, balancing-loop, reinforcing-loop, impact-effort, ladder-of-inference, ooda-loop, hard-choice, sbi
+
+Frameworks not in the chosen tier are skipped silently. Confidence rubric max scales with tier (Quick caps at 6/10, Standard at 8/10, Deep at 10/10).
+
+### Added — ETA estimator
+
+Both `bin/progress` (in-conversation block) and `bin/statusline` (Claude Code bottom bar) now show estimated remaining time when ≥ 2 frameworks have completed:
+
+- Progress block: `ETA: ~12m remaining (4/16)`
+- Statusline: `... 3/16 framework • 9m/30m $0.80/$5 ~21m left`
+
+ETA = avg per-framework time × frameworks remaining. Tier-aware (Quick = 8, Standard = 16, Deep = 25 in the divisor).
+
+### Added — `bin/tier` helper
+
+```
+tier list                    show all 3 tiers + counts + default budgets
+tier quick                   space-separated framework list
+tier standard --json         JSON with phase breakdown
+tier deep --in cynefin       exit 0 if framework is in the tier
+tier defaults standard       prints "1800 5" (default time + tokens)
+```
+
+### Added — `solve --tier` flag
+
+```bash
+solve --tier quick "narrow problem"
+solve --tier deep --budget time=2h "high-stakes one-way decision"
+```
+
+Pre-seeds Step 0.55 answer, skipping the prompt.
+
+### Changed
+
+- Default budget now derives from tier (was always unlimited if user didn't specify).
+- Statusline now shows the correct `N/<tier_total>` rather than always `N/25`.
+- Progress block ETA + completion percentage scale with tier.
+- install smoke tests verify all 10 bins.
+
+### Why
+
+The 45-min real-world run hit the natural ceiling of /solve's depth. Adding a tier picker lets users pick the trade-off intentionally:
+
+- "Quick decision, low stakes" → Quick tier, ~15 min, gets the load-bearing frameworks only
+- "Standard decision, normal stakes" → Standard tier (default), ~30 min, drops the conditional + redundant frameworks
+- "One-way-door, high stakes" → Deep tier, full 25 frameworks with all the dissent-surfacing depth
+
+Previous behavior (always Deep, no cap) is preserved by passing `--tier deep --budget time=unlimited`.
+
+
 ## [0.5.2] — 2026-05-04
 
 ### Added
@@ -178,7 +245,8 @@ The fourth piece (AskUserQuestion auto-conversion) is preventive: teammates occa
 - Output formats: pyramid (Minto top-down), build-up, tldr.
 - Soft cost cap at $5 of API spend.
 
-[Unreleased]: https://github.com/bajpainaman/solve/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/bajpainaman/solve/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/bajpainaman/solve/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/bajpainaman/solve/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/bajpainaman/solve/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/bajpainaman/solve/compare/v0.3.0...v0.5.0
