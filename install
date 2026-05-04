@@ -36,15 +36,52 @@ fail() { printf '  %s✗%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; }
 step() { printf '\n%s== %s ==%s\n' "$C_BOLD" "$*" "$C_RESET"; }
 
 # ---------- locate source ----------
+REPO_URL="${SOLVE_REPO_URL:-https://github.com/bajpainaman/solve.git}"
+REPO_BRANCH="${SOLVE_REPO_BRANCH:-main}"
+LOCAL_CACHE="${SOLVE_LOCAL_CACHE:-$HOME/.local/share/solve}"
+
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+SRC=""
 if [ -f "$SCRIPT_DIR/SKILL.md" ]; then
   SRC="$SCRIPT_DIR"                                  # flat layout (the github repo root)
 elif [ -f "$SCRIPT_DIR/.claude/skills/solve/SKILL.md" ]; then
   SRC="$SCRIPT_DIR/.claude/skills/solve"             # nested layout (vendored in another repo)
-else
-  fail "could not locate SKILL.md (looked in $SCRIPT_DIR)"
-  exit 1
 fi
+
+# Curl-bash mode: SCRIPT_DIR is /dev/fd/* or otherwise lacks SKILL.md.
+# Clone the repo to a stable cache location and re-exec from there.
+if [ -z "$SRC" ]; then
+  step "/solve installer (remote clone mode)"
+  log "Source not found locally; cloning from $REPO_URL"
+  if ! command -v git >/dev/null 2>&1; then
+    fail "git not found on PATH; cannot clone. Install git or run the installer from a local clone:"
+    fail "    git clone $REPO_URL && cd solve && ./install"
+    exit 1
+  fi
+  mkdir -p "$(dirname "$LOCAL_CACHE")"
+  if [ -d "$LOCAL_CACHE/.git" ]; then
+    log "Cache exists at $LOCAL_CACHE; pulling latest..."
+    if ! git -C "$LOCAL_CACHE" pull --ff-only origin "$REPO_BRANCH" 2>/dev/null; then
+      warn "git pull failed; reinitializing cache"
+      rm -rf "$LOCAL_CACHE"
+    fi
+  fi
+  if [ ! -d "$LOCAL_CACHE/.git" ]; then
+    if ! git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$LOCAL_CACHE" 2>&1; then
+      fail "git clone failed"
+      exit 1
+    fi
+  fi
+  if [ ! -f "$LOCAL_CACHE/SKILL.md" ]; then
+    fail "cloned repo does not contain SKILL.md (something is wrong with $REPO_URL@$REPO_BRANCH)"
+    exit 1
+  fi
+  ok "Cloned to $LOCAL_CACHE"
+  log "Re-executing installer from local clone..."
+  log ""
+  exec bash "$LOCAL_CACHE/install" "$@"
+fi
+
 DEST="$HOME/.claude/skills/solve"
 SHIM_DIR="$HOME/.local/bin"
 SHIM="$SHIM_DIR/solve"
