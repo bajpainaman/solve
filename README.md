@@ -621,7 +621,11 @@ If you want to fork for a domain-specific variant (`/solve-legal`, `/solve-medic
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE) (coming).
+MIT. See [`LICENSE`](LICENSE).
+
+## Changelog
+
+See [`CHANGELOG.md`](CHANGELOG.md) for version history.
 
 ---
 
