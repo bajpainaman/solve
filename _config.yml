@@ -1,0 +1,30 @@
+title: solve
+description: Strategic decisions, deconstructed. Atomize. See the system. Rebuild with explicit confidence + a built-in adversary.
+theme: jekyll-theme-cayman
+url: https://bajpainaman.github.io
+baseurl: /solve
+markdown: kramdown
+plugins:
+  - jemoji
+  - jekyll-mentions
+  - jekyll-relative-links
+
+include:
+  - frameworks
+  - bin
+
+exclude:
+  - node_modules
+  - install
+  - solve
+  - "*.bak"
+  - .DS_Store
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+
+# So mermaid renders on Pages
+mermaid: true

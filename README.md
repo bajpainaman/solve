@@ -1,19 +1,69 @@
+<div align="center">
+
 # `solve`
 
-> Take any problem. Atomize it down to first principles. See the system around it. Rebuild it as a decision you can defend, with explicit confidence math and a built-in adversary.
+### Strategic decisions, deconstructed.
 
-[![GitHub](https://img.shields.io/badge/github-bajpainaman%2Fsolve-blue?logo=github)](https://github.com/bajpainaman/solve)
-[![Frameworks](https://img.shields.io/badge/frameworks-25-green)](frameworks/)
+**Atomize. See the system. Rebuild with explicit confidence + a built-in adversary.**
+
+[![GitHub release](https://img.shields.io/github/v/release/bajpainaman/solve?color=informational&label=release&sort=semver)](https://github.com/bajpainaman/solve/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Frameworks](https://img.shields.io/badge/frameworks-25-blue)](frameworks/)
+[![Lines](https://img.shields.io/badge/skill-1.3k%20lines-purple)]()
 [![Agent Teams](https://img.shields.io/badge/orchestration-agent--teams-orange)](https://code.claude.com/docs/en/agent-teams)
-[![Voice](https://img.shields.io/badge/voice-builder-black)]()
+[![Last commit](https://img.shields.io/github/last-commit/bajpainaman/solve)](https://github.com/bajpainaman/solve/commits/main)
+[![Stars](https://img.shields.io/github/stars/bajpainaman/solve?style=social)](https://github.com/bajpainaman/solve/stargazers)
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/main/install)
 ```
 
-After install, type `solve "your problem"` in any terminal. Claude Code spins up a 5-agent team that runs 25 thinking frameworks across 3 phases and produces a decision you can ship.
+**One line, any machine. Then `solve "your problem"` in any terminal.**
+
+</div>
 
 ---
+
+## What you get
+
+|  |  |
+|---|---|
+| 🧠 **25 thinking frameworks** | from [untools.co](https://untools.co), each ~800 lines deep |
+| 🤖 **5-agent team + 6-hat burst** | Claude Code agent-teams, peer-to-peer messaging, adversary watching everything |
+| 🔬 **Layered research** | Parallel.ai → WebSearch → gstack browse, fan-out 30+ queries |
+| ⚖️ **Confidence math** | 0-10 rubric + Bayesian posterior + HIGH/MED/LOW bucket |
+| 🛡️ **Built-in adversary** | continuous devil's-advocate flags weakness in every framework output |
+| 💰 **Budget gating** | hard caps on time + tokens; 6 calls of any tool per teammate = halt |
+| 📈 **Calibration drift detection** | tracks every run; raises threshold when HIGH bucket stops meaning HIGH |
+| 🎯 **Regime classifier** | routes knowledge questions to a 1-page synthesis instead of 25 frameworks |
+
+---
+
+## Table of contents
+
+- [The idea](#the-idea)
+- [Why this works](#why-this-works)
+- [How the 25 frameworks fit together](#how-the-25-frameworks-fit-together)
+- [Phase 1: deconstruct to atoms](#phase-1-zoomed-deconstruct-to-atoms)
+- [Phase 2: systems](#phase-2-zoomed-systems)
+- [Phase 3: rebuild with confidence](#phase-3-zoomed-rebuild-with-confidence)
+- [Confidence math](#confidence-math)
+- [The agent team](#the-agent-team)
+- [Worked example: OFTv2 migration](#worked-example-should-we-migrate-to-oftv2)
+- [Install](#install)
+- [Usage](#usage)
+- [Budget gating](#budget-gating-v050)
+- [Calibration drift](#calibration-drift-v050)
+- [The 25 frameworks at a glance](#the-25-frameworks-at-a-glance)
+- [Research stack](#research-stack-layered)
+- [Cross-skill auto-handoffs](#cross-skill-auto-handoffs)
+- [File layout](#file-layout)
+- [Why agent teams](#why-agent-teams-not-subagents)
+- [Self-management](#self-management)
+- [Contributing](#contributing)
+
+---
+
 
 ## The idea
 
