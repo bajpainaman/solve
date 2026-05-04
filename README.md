@@ -143,7 +143,7 @@ flowchart TD
     Problem --> INV[Inversion<br/><i>how could this fail?</i><br/><i>derive constraints</i>]
     Problem --> PT[Productive Thinking<br/><i>6-step Hurson model</i><br/><i>question → answers → forge</i>]
 
-    AL --> Atom([("atomic truths<br/>about the problem")])
+    AL --> Atom(["atomic truths<br/>about the problem"])
     FP --> Atom
     IT --> Atom
     ISH --> Atom
@@ -153,7 +153,7 @@ flowchart TD
     Atom --> ZW[Zwicky Box<br/><i>combinatorial matrix</i><br/><i>generate archetypes</i>]
     Atom --> CRD[Conflict Resolution<br/><i>only if stakeholders disagree</i><br/><i>find evaporating assumption</i>]
 
-    ZW --> Archetypes([("named solution<br/>archetypes")])
+    ZW --> Archetypes(["named solution<br/>archetypes"])
     CRD --> Archetypes
 
     style Problem fill:#fef3c7,stroke:#f59e0b
@@ -379,7 +379,7 @@ flowchart TB
     Route --> Result[Decision Matrix winner:<br/><b>dual-deploy + drain</b><br/>score 8.2 vs 6.7<br/><br/>Six Hats: 5 of 6 agree<br/>Adversary score: 6/10]
     Result --> Conf[Confidence:<br/>rubric 9/10<br/>posterior 0.82<br/>bucket <b>HIGH</b><br/>mode QUALITY]
 
-    Conf --> Final([<b>Recommendation</b><br/>Migrate via dual-deploy + drain<br/>over 6 weeks<br/>with external audit consult<br/><br/><b>Dissent</b><br/>auditor not yet engaged<br/>mempool dynamics during gas spike<br/>"newer is better" assumption])
+    Conf --> Final([<b>Recommendation</b><br/>Migrate via dual-deploy + drain<br/>over 6 weeks<br/>with external audit consult<br/><br/><b>Dissent</b><br/>auditor not yet engaged<br/>mempool dynamics during gas spike<br/>'newer is better' assumption])
 
     style Q fill:#fef3c7,stroke:#f59e0b
     style P1 fill:#dbeafe,stroke:#2563eb
