@@ -1,6 +1,6 @@
 ---
 name: solve
-version: 0.3.0
+version: 0.3.1
 description: |
   Strategic problem solver. Orchestrates an agent team across 25 untools.co frameworks in
   3 phases (define, systems, decide). Lead spawns long-lived teammates (researcher, definer,
