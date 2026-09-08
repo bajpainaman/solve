@@ -1,27 +1,17 @@
 #!/usr/bin/env bash
-# /solve — one-shot installer
+# $solve — Codex installer
 #
-# Remote one-liner:
+# Remote:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/main/install)
-#
-# Local (after git clone):
+# Local:
 #   ./install
 #
-# What it does:
-#   1. Locates the skill source (this directory, either flat or .claude/skills/solve nested)
-#   2. Symlinks (or copies) it to ~/.claude/skills/solve
-#   3. Drops a `solve` CLI shim at ~/.local/bin/solve and ensures PATH covers it
-#   4. Enables CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS in ~/.claude/settings.json
-#   5. Verifies Claude Code >= 2.1.32 and gstack are present
-#   6. Walks through Parallel.ai key setup (optional, skippable)
-#   7. Smoke-tests every helper script
-#   8. Prints next-step usage hint
-#
-# Re-running is idempotent.
+# Installs the skill at ~/.agents/skills/solve and the `solve` launcher at
+# ~/.local/bin/solve. Codex subagents are enabled by default in current releases;
+# this installer verifies that capability and never edits Claude configuration.
 
 set -euo pipefail
 
-# ---------- color/log helpers ----------
 if [ -t 1 ]; then
   C_BOLD=$(printf '\033[1m'); C_GREEN=$(printf '\033[32m')
   C_YELLOW=$(printf '\033[33m'); C_RED=$(printf '\033[31m')
@@ -35,319 +25,316 @@ warn() { printf '  %s!%s %s\n' "$C_YELLOW" "$C_RESET" "$*"; }
 fail() { printf '  %s✗%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; }
 step() { printf '\n%s== %s ==%s\n' "$C_BOLD" "$*" "$C_RESET"; }
 
-# ---------- locate source ----------
 REPO_URL="${SOLVE_REPO_URL:-https://github.com/bajpainaman/solve.git}"
 REPO_BRANCH="${SOLVE_REPO_BRANCH:-main}"
 LOCAL_CACHE="${SOLVE_LOCAL_CACHE:-$HOME/.local/share/solve}"
+DEST="${SOLVE_SKILL_DEST:-$HOME/.agents/skills/solve}"
+SHIM_DIR="${SOLVE_SHIM_DIR:-$HOME/.local/bin}"
+SHIM="$SHIM_DIR/solve"
+CODEX_BIN="${CODEX_BIN:-codex}"
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 SRC=""
 if [ -f "$SCRIPT_DIR/SKILL.md" ]; then
-  SRC="$SCRIPT_DIR"                                  # flat layout (the github repo root)
-elif [ -f "$SCRIPT_DIR/.claude/skills/solve/SKILL.md" ]; then
-  SRC="$SCRIPT_DIR/.claude/skills/solve"             # nested layout (vendored in another repo)
+  SRC="$SCRIPT_DIR"
+elif [ -f "$SCRIPT_DIR/.agents/skills/solve/SKILL.md" ]; then
+  SRC="$SCRIPT_DIR/.agents/skills/solve"
 fi
 
-# Curl-bash mode: SCRIPT_DIR is /dev/fd/* or otherwise lacks SKILL.md.
-# Clone the repo to a stable cache location and re-exec from there.
+# In curl/process-substitution mode the script has no sibling files. Maintain a
+# stable local clone, preserving a failed cache as a timestamped backup.
 if [ -z "$SRC" ]; then
-  step "/solve installer (remote clone mode)"
-  log "Source not found locally; cloning from $REPO_URL"
+  step '$solve installer (remote clone mode)'
   if ! command -v git >/dev/null 2>&1; then
-    fail "git not found on PATH; cannot clone. Install git or run the installer from a local clone:"
-    fail "    git clone $REPO_URL && cd solve && ./install"
+    fail "git not found; clone manually: git clone $REPO_URL && cd solve && ./install"
     exit 1
   fi
   mkdir -p "$(dirname "$LOCAL_CACHE")"
   if [ -d "$LOCAL_CACHE/.git" ]; then
-    log "Cache exists at $LOCAL_CACHE; pulling latest..."
-    if ! git -C "$LOCAL_CACHE" pull --ff-only origin "$REPO_BRANCH" 2>/dev/null; then
-      warn "git pull failed; reinitializing cache"
-      rm -rf "$LOCAL_CACHE"
+    log "Updating cache at $LOCAL_CACHE..."
+    if ! git -C "$LOCAL_CACHE" pull --ff-only origin "$REPO_BRANCH"; then
+      CACHE_BACKUP="$LOCAL_CACHE.bak.$(date +%Y%m%d-%H%M%S)"
+      warn "cache update failed; preserving it at $CACHE_BACKUP"
+      mv -- "$LOCAL_CACHE" "$CACHE_BACKUP"
     fi
+  elif [ -e "$LOCAL_CACHE" ]; then
+    CACHE_BACKUP="$LOCAL_CACHE.bak.$(date +%Y%m%d-%H%M%S)"
+    warn "non-git cache exists; preserving it at $CACHE_BACKUP"
+    mv -- "$LOCAL_CACHE" "$CACHE_BACKUP"
   fi
   if [ ! -d "$LOCAL_CACHE/.git" ]; then
-    if ! git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$LOCAL_CACHE" 2>&1; then
-      fail "git clone failed"
-      exit 1
-    fi
+    git clone --depth 1 --branch "$REPO_BRANCH" "$REPO_URL" "$LOCAL_CACHE"
   fi
-  if [ ! -f "$LOCAL_CACHE/SKILL.md" ]; then
-    fail "cloned repo does not contain SKILL.md (something is wrong with $REPO_URL@$REPO_BRANCH)"
-    exit 1
-  fi
-  ok "Cloned to $LOCAL_CACHE"
-  log "Re-executing installer from local clone..."
-  log ""
+  [ -f "$LOCAL_CACHE/SKILL.md" ] || { fail "cloned repository has no SKILL.md"; exit 1; }
+  ok "source cached at $LOCAL_CACHE"
   exec bash "$LOCAL_CACHE/install" "$@"
 fi
 
-DEST="$HOME/.claude/skills/solve"
-SHIM_DIR="$HOME/.local/bin"
-SHIM="$SHIM_DIR/solve"
-
-step "/solve installer"
+step '$solve installer for Codex'
 log "Source: $SRC"
-log "Dest:   $DEST"
+log "Skill:  $DEST"
 log "Shim:   $SHIM"
 
-# ---------- step 1: dependency checks ----------
-step "1/7 dependency checks"
-
-CC_BIN="${CLAUDE_BIN:-claude}"
-if ! command -v "$CC_BIN" >/dev/null 2>&1; then
-  fail "claude CLI not on PATH (https://docs.claude.com/claude-code)"
+step "1/6 dependency checks"
+if ! command -v "$CODEX_BIN" >/dev/null 2>&1; then
+  fail "Codex CLI not on PATH (https://developers.openai.com/codex/cli)"
   exit 1
 fi
-CC_VER=$("$CC_BIN" --version 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-if [ -z "$CC_VER" ]; then
-  warn "could not parse claude --version (continuing)"
-else
-  awk -v v="$CC_VER" 'BEGIN{
-    split(v,a,".");
-    need_major=2; need_minor=1; need_patch=32;
-    if (a[1]<need_major || (a[1]==need_major && a[2]<need_minor) || (a[1]==need_major && a[2]==need_minor && a[3]<need_patch)) exit 1
-  }' && ok "claude $CC_VER (>= 2.1.32)" \
-     || { fail "claude $CC_VER is too old, need >= 2.1.32 for agent teams"; exit 1; }
-fi
+ok "$("$CODEX_BIN" --version 2>/dev/null | head -1)"
 
-if command -v jq >/dev/null 2>&1; then
-  ok "jq found"; HAVE_JQ=1
-else
-  warn "jq not found — falling back to python3 for JSON edits"; HAVE_JQ=0
+if ! command -v python3 >/dev/null 2>&1; then
+  fail "python3 is required by solve's state and report helpers"
+  exit 1
 fi
+ok "python3 found"
 
-if command -v python3 >/dev/null 2>&1; then
-  ok "python3 found"
+FEATURES=$("$CODEX_BIN" features list 2>/dev/null || true)
+if printf '%s\n' "$FEATURES" | awk '$1 == "multi_agent" && $NF == "true" { found=1 } END { exit !found }'; then
+  ok "Codex subagent workflows enabled"
+elif printf '%s\n' "$FEATURES" | grep -q '^multi_agent[[:space:]]'; then
+  fail "Codex multi_agent is disabled; enable it with: codex features enable multi_agent"
+  exit 1
 else
-  fail "python3 required (used for JSON edits + parallel-research)"
+  fail "this Codex build does not expose multi-agent support; update Codex and retry"
   exit 1
 fi
 
-if [ -d "$HOME/.claude/skills/gstack" ]; then
-  ok "gstack found"
-else
-  warn "gstack not detected at ~/.claude/skills/gstack — /solve telemetry/learnings will degrade"
+CODEX_CONFIG="${CODEX_HOME:-$HOME/.codex}/config.toml"
+if [ -f "$CODEX_CONFIG" ]; then
+  AGENTS_ENABLED=$(python3 - "$CODEX_CONFIG" <<'PY'
+import sys
+
+try:
+    import tomllib
+except Exception:
+    tomllib = None
+
+if tomllib is not None:
+    try:
+        with open(sys.argv[1], "rb") as handle:
+            data = tomllib.load(handle)
+        print("true" if data.get("agents", {}).get("enabled", True) else "false")
+    except Exception:
+        print("unknown")
+else:
+    # Python < 3.11 fallback for the single setting we need to detect.
+    section = ""
+    result = "unknown"
+    with open(sys.argv[1]) as handle:
+        for raw in handle:
+            line = raw.split("#", 1)[0].strip()
+            if line.startswith("[") and line.endswith("]"):
+                section = line[1:-1].strip()
+            elif section == "agents" and line.startswith("enabled") and "=" in line:
+                value = line.split("=", 1)[1].strip().lower()
+                result = "false" if value == "false" else "true" if value == "true" else "unknown"
+                break
+    print(result)
+PY
+)
+  if [ "$AGENTS_ENABLED" = "false" ]; then
+    fail "agents.enabled=false in $CODEX_CONFIG; enable subagents before installing solve"
+    exit 1
+  fi
 fi
 
-# ---------- step 2: install skill files ----------
-step "2/7 install skill files"
-mkdir -p "$HOME/.claude/skills"
+GSTACK_ROOT="$HOME/.agents/skills/gstack"
+if [ -d "$GSTACK_ROOT" ]; then
+  ok "optional gstack integration found"
+else
+  warn "gstack not found at $GSTACK_ROOT; solve will run without its optional telemetry/browser helpers"
+fi
 
-if [ -e "$DEST" ] || [ -L "$DEST" ]; then
-  if [ -L "$DEST" ] && [ "$(readlink "$DEST")" = "$SRC" ]; then
-    ok "already symlinked correctly"
+step "2/6 install Codex skill"
+mkdir -p "$(dirname "$DEST")"
+SRC_REAL=$(cd "$SRC" && pwd -P)
+DEST_REAL=$(python3 - "$DEST" <<'PY'
+import sys
+from pathlib import Path
+
+print(Path(sys.argv[1]).expanduser().resolve())
+PY
+)
+if [ -L "$DEST" ] && [ "$DEST_REAL" = "$SRC_REAL" ]; then
+  ok "already symlinked correctly"
+elif [ -e "$DEST" ] || [ -L "$DEST" ]; then
+  if [ -d "$DEST" ] && [ "$(cd "$DEST" 2>/dev/null && pwd -P)" = "$SRC_REAL" ]; then
+    ok "running from the installed skill directory"
   else
     BACKUP="$DEST.bak.$(date +%Y%m%d-%H%M%S)"
-    mv "$DEST" "$BACKUP"
-    warn "moved existing $DEST -> $BACKUP"
+    mv -- "$DEST" "$BACKUP"
+    warn "moved existing skill to $BACKUP"
   fi
 fi
 
 if [ ! -e "$DEST" ]; then
   if [ "${SOLVE_INSTALL_MODE:-symlink}" = "copy" ]; then
-    command cp -r "$SRC" "$DEST"
-    ok "copied to $DEST"
+    cp -R "$SRC" "$DEST"
+    ok "copied skill to $DEST"
   else
-    ln -s "$SRC" "$DEST"
-    ok "symlinked $DEST -> $SRC"
+    ln -s "$SRC_REAL" "$DEST"
+    ok "symlinked $DEST -> $SRC_REAL"
   fi
 fi
-
 chmod +x "$DEST"/bin/* 2>/dev/null || true
 
-# ---------- step 3: install solve CLI shim ----------
-step "3/7 install \`solve\` CLI shim"
+step "3/6 install solve launcher"
 mkdir -p "$SHIM_DIR"
-
-if [ -f "$SRC/solve" ]; then
-  command cp "$SRC/solve" "$SHIM"
-  chmod +x "$SHIM"
-  ok "$SHIM"
-else
-  fail "$SRC/solve not found (skipping shim install)"
+if [ ! -f "$SRC/solve" ]; then
+  fail "$SRC/solve not found"
+  exit 1
 fi
-
-# Ensure ~/.local/bin is on PATH AND the agent-teams flag is in shell env, for
-# both current and future shells. Wrapped in a single marked block so
-# `solve --uninstall` can clean it up later.
-NEED_PATH=1
-NEED_FLAG=1
-case ":$PATH:" in *":$SHIM_DIR:"*) NEED_PATH=0 ;; esac
-[ "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" = "1" ] && NEED_FLAG=0
-
-if [ "$NEED_PATH" = "0" ]; then ok "$SHIM_DIR already on PATH"; fi
-if [ "$NEED_FLAG" = "0" ]; then ok "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 already in shell env"; fi
-
-# Always write a fresh marked block to all detected rc files (idempotent: we
-# remove any prior block first). This way users don't end up with a half-
-# updated shim if we change the block content across versions.
-RC_TARGETS=()
-for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
-  [ -f "$rc" ] && RC_TARGETS+=("$rc")
-done
-
-for rc in "${RC_TARGETS[@]}"; do
-  if grep -q '# solve-cli >>>' "$rc" 2>/dev/null; then
-    python3 - "$rc" <<'PY'
-import sys, re
-p = sys.argv[1]
-with open(p) as f: s = f.read()
-s = re.sub(r'\n?# solve-cli >>>.*?# solve-cli <<<\n?', '\n', s, flags=re.DOTALL)
-with open(p, 'w') as f: f.write(s)
-PY
+if [ -e "$SHIM" ] || [ -L "$SHIM" ]; then
+  if cmp -s "$SRC/solve" "$SHIM"; then
+    ok "$SHIM already current"
+  else
+    SHIM_BACKUP="$SHIM.bak.$(date +%Y%m%d-%H%M%S)"
+    mv -- "$SHIM" "$SHIM_BACKUP"
+    warn "preserved existing launcher at $SHIM_BACKUP"
   fi
-  {
-    printf '\n# solve-cli >>>\n'
-    printf 'export PATH="$HOME/.local/bin:$PATH"\n'
-    printf 'export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\n'
-    printf '# solve-cli <<<\n'
-  } >> "$rc"
-  ok "wrote solve-cli block to $rc"
-done
-
-if [ "$NEED_PATH" = "1" ] || [ "$NEED_FLAG" = "1" ]; then
-  log "  ${C_DIM}for this terminal, source the rc:  source ~/.zshrc${C_RESET}"
-  log "  ${C_DIM}new terminals get it automatically${C_RESET}"
 fi
+if [ ! -e "$SHIM" ] && [ ! -L "$SHIM" ]; then
+  cp "$SRC/solve" "$SHIM"
+fi
+chmod +x "$SHIM"
+ok "$SHIM"
 
-# ---------- step 4: enable agent teams flag ----------
-step "4/7 enable agent teams in ~/.claude/settings.json"
-SETTINGS="$HOME/.claude/settings.json"
-[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
-
-if [ "$HAVE_JQ" = "1" ]; then
-  TMP=$(mktemp)
-  jq '.env = (.env // {}) | .env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"' \
-     "$SETTINGS" > "$TMP" && mv "$TMP" "$SETTINGS"
+NEED_PATH=1
+case ":$PATH:" in *":$SHIM_DIR:"*) NEED_PATH=0 ;; esac
+if [ "$NEED_PATH" = "0" ]; then
+  ok "$SHIM_DIR already on PATH"
 else
-  python3 - "$SETTINGS" <<'PY'
-import json, sys
-p = sys.argv[1]
-with open(p) as f:
-    try: d = json.load(f)
-    except Exception: d = {}
-d.setdefault("env", {})
-d["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"] = "1"
-with open(p, "w") as f:
-    json.dump(d, f, indent=2)
-PY
-fi
-ok "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = \"1\" in $SETTINGS"
-
-# ---------- step 4.5: claude code statusline ----------
-step "4.5/7 Claude Code statusline (live progress in bottom bar)"
-SETTINGS="$HOME/.claude/settings.json"
-[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
-
-CURRENT_STATUSLINE=$(python3 -c "
-import json
-try:
-  d = json.load(open('$SETTINGS'))
-  sl = d.get('statusLine')
-  if sl is None: print('none')
-  elif isinstance(sl, dict) and 'solve' in (sl.get('command') or ''): print('ours')
-  else: print('other')
-except Exception: print('none')
-" 2>/dev/null || echo none)
-
-case "$CURRENT_STATUSLINE" in
-  ours)
-    ok "/solve statusline already configured"
-    ;;
-  none)
-    if [ "${SOLVE_INSTALL_NONINTERACTIVE:-0}" = "1" ] || [ ! -t 0 ]; then
-      # Auto-enable in non-interactive mode (curl-bash flow) since user opted in by running install
-      python3 - "$SETTINGS" "$DEST/bin/statusline" <<'PYE'
-import json, sys
-path, sl_path = sys.argv[1:]
-with open(path) as f: d = json.load(f)
-d['statusLine'] = {'type': 'command', 'command': sl_path}
-with open(path, 'w') as f: json.dump(d, f, indent=2)
-PYE
-      ok "statusLine wired to $DEST/bin/statusline"
-      log "  ${C_DIM}Restart any open claude sessions to see live /solve progress in the bottom bar.${C_RESET}"
-    else
-      echo
-      read -r -p "Enable /solve live progress bar in Claude Code's bottom status bar? [Y/n] " yn
-      case "${yn:-Y}" in
-        n|N|no|NO) warn "skipped — set manually later in $SETTINGS" ;;
-        *)
-          python3 - "$SETTINGS" "$DEST/bin/statusline" <<'PYE'
-import json, sys
-path, sl_path = sys.argv[1:]
-with open(path) as f: d = json.load(f)
-d['statusLine'] = {'type': 'command', 'command': sl_path}
-with open(path, 'w') as f: json.dump(d, f, indent=2)
-PYE
-          ok "statusLine wired to $DEST/bin/statusline"
-          log "  ${C_DIM}Restart any open claude sessions to see live progress.${C_RESET}"
-          ;;
-      esac
+  RC_TARGETS=()
+  for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+    [ -f "$rc" ] && RC_TARGETS+=("$rc")
+  done
+  for rc in "${RC_TARGETS[@]}"; do
+    if grep -q '# solve-cli >>>' "$rc" 2>/dev/null; then
+      ok "$rc already contains the solve PATH block"
+      continue
     fi
-    ;;
-  other)
-    warn "you already have a custom statusLine in $SETTINGS"
-    warn "to enable /solve progress, replace it with:"
-    log "    "statusLine": {"type": "command", "command": "$DEST/bin/statusline"}"
-    log "  ${C_DIM}or chain your existing script + ours via a wrapper${C_RESET}"
-    ;;
-esac
+    RC_BACKUP="$rc.solve-bak.$(date +%Y%m%d-%H%M%S)"
+    cp -- "$rc" "$RC_BACKUP"
+    {
+      printf '\n# solve-cli >>>\n'
+      printf 'export PATH="$HOME/.local/bin:$PATH"\n'
+      printf '# solve-cli <<<\n'
+    } >> "$rc"
+    ok "added $SHIM_DIR to PATH in $rc (backup at $RC_BACKUP)"
+  done
+  if [ ${#RC_TARGETS[@]} -eq 0 ]; then
+    warn "no shell rc file found; add $SHIM_DIR to PATH manually"
+  else
+    log "  ${C_DIM}open a new shell or source your shell rc before running solve${C_RESET}"
+  fi
+fi
 
-# ---------- step 5: parallel.ai key ----------
-step "5/7 Parallel.ai API key"
+step "4/6 optional Parallel.ai setup"
 KEY_FILE="$HOME/.gstack/parallel-api-key"
 mkdir -p "$HOME/.gstack"
-
 if [ -n "${PARALLEL_API_KEY:-}" ] || [ -s "$KEY_FILE" ]; then
-  ok "key already configured"
+  ok "Parallel.ai key configured"
 elif [ "${SOLVE_INSTALL_NONINTERACTIVE:-0}" = "1" ] || [ ! -t 0 ]; then
-  warn "non-interactive install — skipping key setup"
-  warn "run later: $DEST/bin/parallel-setup"
+  warn "skipped in non-interactive install; run $DEST/bin/parallel-setup later if wanted"
 else
   echo
-  echo "Get a key at https://platform.parallel.ai (skip if you don't have one — /solve degrades to WebSearch)"
-  read -r -p "Set up Parallel.ai key now? [Y/n] " yn
-  case "${yn:-Y}" in
-    n|N|no|NO) warn "skipped — run $DEST/bin/parallel-setup later" ;;
-    *)         "$DEST/bin/parallel-setup" || warn "key setup skipped/failed" ;;
+  log "Parallel.ai is optional; Codex web search remains available without it."
+  read -r -p "Set up a Parallel.ai key now? [y/N] " yn
+  case "${yn:-N}" in
+    y|Y|yes|YES) "$DEST/bin/parallel-setup" || warn "key setup skipped or failed" ;;
+    *) warn "skipped" ;;
   esac
 fi
 
-# ---------- step 6: smoke test ----------
-step "6/7 smoke tests"
-[ -f "$DEST/SKILL.md" ]                    && ok "SKILL.md present"          || fail "SKILL.md missing"
-_FRAMEWORK_COUNT=$(find "$DEST/frameworks" -maxdepth 1 -name '*.md' -not -name '_TEMPLATE.md' 2>/dev/null | wc -l | tr -d ' ')
-[ "$_FRAMEWORK_COUNT" = "25" ] && ok "25 framework files" || warn "framework count = $_FRAMEWORK_COUNT (expected 25)"
-for b in parallel-research parallel-setup state-rw cost-track render-report budget-track calibration progress statusline tier; do
-  [ -x "$DEST/bin/$b" ] && ok "bin/$b executable" || fail "bin/$b missing or not executable"
-done
-[ -x "$SHIM" ] && ok "solve shim executable at $SHIM" || warn "solve shim missing"
-"$DEST/bin/parallel-setup" --status >/dev/null 2>&1 && ok "parallel-setup --status runs" || true
+step "5/6 validate skill package"
+python3 - "$DEST/SKILL.md" <<'PY'
+import re
+import sys
 
-# ---------- step 7: project skill routing nudge ----------
-step "7/7 project skill routing"
-if [ -f "$PWD/CLAUDE.md" ] && grep -q "/solve" "$PWD/CLAUDE.md" 2>/dev/null; then
-  ok "$PWD/CLAUDE.md already references /solve"
-elif [ -f "$PWD/CLAUDE.md" ]; then
-  warn "$PWD/CLAUDE.md exists but doesn't mention /solve (no auto-edit)"
+text = open(sys.argv[1]).read()
+match = re.match(r"^---\n(.*?)\n---", text, re.S)
+if not match:
+    raise SystemExit("invalid SKILL.md frontmatter")
+frontmatter = match.group(1)
+if not re.search(r"^name:\s*solve\s*$", frontmatter, re.M):
+    raise SystemExit("SKILL.md name must be solve")
+if not re.search(r"^description:\s*", frontmatter, re.M):
+    raise SystemExit("SKILL.md description missing")
+PY
+ok "SKILL.md metadata valid"
+if [ -f "$DEST/agents/openai.yaml" ]; then
+  ok "agents/openai.yaml present"
+else
+  warn "agents/openai.yaml missing"
+fi
+if [ -f "$DEST/VERSION" ]; then
+  ok "VERSION present"
+else
+  fail "VERSION missing"
+  exit 1
 fi
 
-# ---------- done ----------
+FRAMEWORK_COUNT=$(python3 - "$DEST/frameworks" <<'PY'
+import sys
+from pathlib import Path
+
+print(sum(1 for path in Path(sys.argv[1]).glob("*.md") if path.name != "_TEMPLATE.md"))
+PY
+)
+if [ "$FRAMEWORK_COUNT" = "25" ]; then
+  ok "25 optional compact method cards"
+else
+  fail "framework count is $FRAMEWORK_COUNT (expected 25)"
+  exit 1
+fi
+for required_file in gates/catalog.json lib/solve_contract.py lib/solve_output.py lib/solve_benchmark.py references/runtime.md references/roles.md references/confidence.md benchmarks/cases.jsonl; do
+  if [ ! -f "$DEST/$required_file" ]; then
+    fail "$required_file missing from adaptive verification package"
+    exit 1
+  fi
+done
+python3 - "$DEST" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "lib"))
+from solve_contract import catalog
+
+gates = catalog()
+assert {g["id"] for g in gates.values() if g["kind"] == "required"} == {"evidence", "refutation", "consumer"}
+for gate in gates.values():
+    assert (root / gate["method"]).is_file(), f"missing method: {gate['method']}"
+PY
+ok "adaptive gate catalog and validator load successfully"
+for helper in parallel-research parallel-setup state-rw cost-track render-report budget-track calibration progress statusline tier gates benchmark; do
+  if [ -x "$DEST/bin/$helper" ]; then
+    ok "bin/$helper"
+  else
+    fail "bin/$helper missing or not executable"
+    exit 1
+  fi
+done
+
+step "6/6 project routing check"
+if [ -f "$PWD/AGENTS.md" ] && grep -q '\$solve\|Strategic decisions.*solve' "$PWD/AGENTS.md" 2>/dev/null; then
+  ok "$PWD/AGENTS.md already routes to \$solve"
+elif [ -f "$PWD/AGENTS.md" ]; then
+  warn "$PWD/AGENTS.md exists but does not mention \$solve (left unchanged)"
+fi
+
 log
-log "${C_BOLD}${C_GREEN}/solve installed.${C_RESET}"
+log "${C_BOLD}${C_GREEN}\$solve installed for Codex.${C_RESET}"
 log
-log "Next steps:"
-log "  ${C_DIM}# from any directory:${C_RESET}"
+log "From any project:"
 log "  solve \"<your problem>\""
 log
-log "  ${C_DIM}# or with a brief file:${C_RESET}"
-log "  solve docs/problem.md"
+log "Inside an existing Codex session:"
+log "  \$solve \"<your problem>\""
 log
-log "  ${C_DIM}# inside an existing claude session, use the slash form:${C_RESET}"
-log "  /solve \"<your problem>\""
+log "If the skill does not appear immediately in /skills, restart Codex."
 log
 log "Manage:"
-log "  solve --update           refresh the skill from the upstream repo"
-log "  solve --uninstall        remove everything (keeps your Parallel.ai key)"
-log "  $DEST/bin/parallel-setup --check"
+log "  solve --status"
+log "  solve --update"
+log "  solve --uninstall"

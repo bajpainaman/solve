@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# budget-track — track wallclock + token spend against caps set in state.json
+# budget-track — track wallclock + external research spend against caps
 #
 # Usage:
 #   budget-track --check time     check time only; exit 0=under, 1=warned (≥80%), 2=halted
-#   budget-track --check tokens   check token spend only
+#   budget-track --check tokens   check external spend only (legacy name)
 #   budget-track --check both     check both; worst exit code wins
 #   budget-track --status         print full status as JSON
 #   budget-track --warn-pct N     override warning threshold (default 80)
 #
 # Reads state from $RUN_DIR/state.json::budget = {time_seconds: N, tokens_usd: N}
-# Reads spend from $SOLVE_COST_FILE for tokens, computes wallclock from $TEL_START.
+# Reads spend from $SOLVE_COST_FILE and computes wallclock from $TEL_START.
+# The state keys tokens_usd/tokens_used are retained for run compatibility; they
+# do not represent Codex subscription or model-token usage.
 # Both null in state = unlimited; exits 0 immediately.
 
 set -euo pipefail
@@ -45,21 +47,32 @@ import json, sys
 with open(sys.argv[1]) as f:
     s = json.load(f)
 b = s.get("budget", {}) or {}
-print(b.get("time_seconds") if b.get("time_seconds") else "null",
-      b.get("tokens_usd") if b.get("tokens_usd") else "null")
+time_cap = b.get("time_seconds")
+spend_cap = b.get("tokens_usd")
+print(time_cap if time_cap is not None else "null",
+      spend_cap if spend_cap is not None else "null")
 PY
 }
 
 elapsed_seconds() {
   if [ -z "$TEL_START" ]; then echo 0; return; fi
-  local now
-  now=$(date +%s)
-  echo $(( now - TEL_START ))
+  python3 - "$TEL_START" <<'PY'
+import sys
+import time
+
+try:
+    started = float(sys.argv[1])
+except ValueError:
+    raise SystemExit(f"invalid start timestamp: {sys.argv[1]}")
+print(max(0, int(time.time() - started)))
+PY
 }
 
 current_spend() {
   if [ -f "$COST_FILE" ]; then
-    cat "$COST_FILE" 2>/dev/null | tr -d '[:space:]' || echo "0"
+    local value
+    value=$(tr -d '[:space:]' < "$COST_FILE" 2>/dev/null || true)
+    if [[ "$value" =~ ^[0-9]+([.][0-9]+)?$ ]]; then echo "$value"; else echo "0"; fi
   else
     echo "0"
   fi
@@ -68,20 +81,37 @@ current_spend() {
 write_status() {
   local time_used=$1 time_cap=$2 tokens_used=$3 tokens_cap=$4 verdict=$5
   python3 - "$STATE" "$time_used" "$time_cap" "$tokens_used" "$tokens_cap" "$verdict" <<'PY'
-import json, sys, os
+import fcntl
+import json
+import os
+import sys
+import tempfile
+
 path, t_used, t_cap, k_used, k_cap, verdict = sys.argv[1:]
-try:
-    with open(path) as f: s = json.load(f)
-except Exception:
-    s = {}
-s["budget_status"] = {
-    "time_used": int(t_used),
-    "time_cap": None if t_cap == "null" else int(t_cap),
-    "tokens_used": float(k_used),
-    "tokens_cap": None if k_cap == "null" else float(k_cap),
-    "verdict": verdict,
-}
-with open(path, "w") as f: json.dump(s, f, indent=2)
+with open(path + ".lock", "a+") as lock:
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    try:
+        with open(path) as handle:
+            state = json.load(handle)
+    except Exception:
+        state = {}
+    state["budget_status"] = {
+        "time_used": int(t_used),
+        "time_cap": None if t_cap == "null" else int(t_cap),
+        "tokens_used": float(k_used),
+        "tokens_cap": None if k_cap == "null" else float(k_cap),
+        "verdict": verdict,
+    }
+    fd, temp_path = tempfile.mkstemp(prefix=".state.", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w") as handle:
+            json.dump(state, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
 PY
 }
 
@@ -89,8 +119,18 @@ read -r TIME_CAP TOKENS_CAP < <(read_budget)
 TIME_USED=$(elapsed_seconds)
 TOKENS_USED=$(current_spend)
 
-# Both unlimited
-if [ "$TIME_CAP" = "null" ] && [ "$TOKENS_CAP" = "null" ]; then
+CHECK_TIME=0
+CHECK_SPEND=0
+case "$MODE" in
+  check_time) CHECK_TIME=1 ;;
+  check_tokens) CHECK_SPEND=1 ;;
+  check_both|status) CHECK_TIME=1; CHECK_SPEND=1 ;;
+  *) echo "ERROR: unknown mode: $MODE" >&2; exit 2 ;;
+esac
+
+# Every requested axis is unlimited.
+if { [ "$CHECK_TIME" = "0" ] || [ "$TIME_CAP" = "null" ]; } && \
+   { [ "$CHECK_SPEND" = "0" ] || [ "$TOKENS_CAP" = "null" ]; }; then
   write_status "$TIME_USED" "null" "$TOKENS_USED" "null" "unlimited"
   if [ "$MODE" = "status" ]; then
     echo "{\"verdict\":\"unlimited\",\"time_used\":$TIME_USED,\"tokens_used\":$TOKENS_USED}"
@@ -102,7 +142,7 @@ VERDICT="under_cap"
 EXIT=0
 WARNINGS=()
 
-if [ "$TIME_CAP" != "null" ]; then
+if [ "$CHECK_TIME" = "1" ] && [ "$TIME_CAP" != "null" ]; then
   TIME_PCT=$(awk -v u="$TIME_USED" -v c="$TIME_CAP" 'BEGIN{if (c==0) print 0; else printf "%d", (u*100)/c}')
   if [ "$TIME_USED" -ge "$TIME_CAP" ]; then
     VERDICT="halted_time"
@@ -114,40 +154,32 @@ if [ "$TIME_CAP" != "null" ]; then
   fi
 fi
 
-if [ "$TOKENS_CAP" != "null" ]; then
-  TOKEN_PCT=$(awk -v u="$TOKENS_USED" -v c="$TOKENS_CAP" 'BEGIN{if (c==0) print 0; else printf "%d", (u*100)/c}')
-  TOKEN_OVER=$(awk -v u="$TOKENS_USED" -v c="$TOKENS_CAP" 'BEGIN{print (u >= c) ? 1 : 0}')
+if [ "$CHECK_SPEND" = "1" ] && [ "$TOKENS_CAP" != "null" ]; then
+  TOKEN_PCT=$(awk -v u="$TOKENS_USED" -v c="$TOKENS_CAP" 'BEGIN{if (c==0) print (u > 0 ? 100 : 0); else printf "%d", (u*100)/c}')
+  TOKEN_OVER=$(awk -v u="$TOKENS_USED" -v c="$TOKENS_CAP" 'BEGIN{print (c == 0 ? u > 0 : u >= c) ? 1 : 0}')
   if [ "$TOKEN_OVER" = "1" ]; then
     VERDICT="halted_tokens"
     EXIT=2
-    WARNINGS+=("tokens exceeded: \$${TOKENS_USED}/\$${TOKENS_CAP}")
+    WARNINGS+=("external spend exceeded: \$${TOKENS_USED}/\$${TOKENS_CAP}")
   elif [ "$TOKEN_PCT" -ge "$WARN_PCT" ]; then
     [ "$EXIT" -lt 1 ] && { VERDICT="warned_tokens"; EXIT=1; }
-    WARNINGS+=("tokens at ${TOKEN_PCT}% of cap (\$${TOKENS_USED}/\$${TOKENS_CAP})")
+    WARNINGS+=("external spend at ${TOKEN_PCT}% of cap (\$${TOKENS_USED}/\$${TOKENS_CAP})")
   fi
 fi
 
 write_status "$TIME_USED" "$TIME_CAP" "$TOKENS_USED" "$TOKENS_CAP" "$VERDICT"
 
-case "$MODE" in
-  check_time|check_tokens|check_both|status)
-    if [ "$MODE" = "status" ] || [ ${#WARNINGS[@]} -gt 0 ]; then
-      printf '{"verdict":"%s","time_used":%s,"time_cap":%s,"tokens_used":%s,"tokens_cap":%s,"warnings":[' \
-        "$VERDICT" "$TIME_USED" "$TIME_CAP" "$TOKENS_USED" "$TOKENS_CAP"
-      sep=""
-      if [ ${#WARNINGS[@]} -gt 0 ]; then
-        for w in "${WARNINGS[@]}"; do
-          printf '%s"%s"' "$sep" "$w"
-          sep=","
-        done
-      fi
-      printf ']}\n'
-    fi
-    ;;
-  *)
-    echo "ERROR: unknown mode: $MODE" >&2
-    exit 2
-    ;;
-esac
+if [ "$MODE" = "status" ] || [ ${#WARNINGS[@]} -gt 0 ]; then
+  printf '{"verdict":"%s","time_used":%s,"time_cap":%s,"tokens_used":%s,"tokens_cap":%s,"warnings":[' \
+    "$VERDICT" "$TIME_USED" "$TIME_CAP" "$TOKENS_USED" "$TOKENS_CAP"
+  sep=""
+  if [ ${#WARNINGS[@]} -gt 0 ]; then
+    for w in "${WARNINGS[@]}"; do
+      printf '%s"%s"' "$sep" "$w"
+      sep=","
+    done
+  fi
+  printf ']}\n'
+fi
 
 exit "$EXIT"

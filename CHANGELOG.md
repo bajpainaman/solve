@@ -1,12 +1,61 @@
 # Changelog
 
-All notable changes to `/solve` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+All notable changes to `solve` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
 ### Pending
-- Self-tag releases on GitHub for pinned-curl installs (`bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/v0.5.0/install)`).
-- frameworks/minto.md: surface calibration drift warning in Dissent section (planned for v0.5.1).
+- Measure baseline and candidate model runs on the published synthetic evaluation corpus.
+
+## [2.0.0] — 2026-09-07
+
+### Changed
+
+- Quick, Standard, and Deep now set budgets and evidence depth. Fixed 8/16/25 framework execution lists and confidence caps are retired.
+- Progress, reporting, and completion share an evidence-bound validator. Non-empty framework files and manually written completion flags no longer imply verified work.
+- Replaced the standing phase team and mandatory Six Hats with bounded analysis, an independent refuter, and a separate consumer reviewer.
+- Replaced framework-vote confidence and default heuristic posteriors with checked claims, explicit uncertainty, and forecast assumptions.
+- Preserved the previous framework explanations under references/deep and replaced normal framework entry points with compact method cards.
+
+### Added
+
+- A trigger catalog and exactly three gate states: FIRED, N/A, BLOCKED. Records require supported applicability, affected claims, expected/observed checks, and hashed artifacts.
+- Blind refuter input bundles, pre-disclosure framing, fresh-identity checks, recommendation snapshots, and independent material-claim coverage assessments.
+- Consumer checks of declared acceptance surfaces and completion receipts bound to the exact delivered report, current decision, and evidence.
+- Synthetic evaluation cases, qrels, changed-premise pairs, omitted-claim cases, an explicit adapter runner, and a scorer that rejects incomplete corpora and invalid usage fields. Missing usage is never estimated.
+- Adversarial tests for invalid completion, false N/A, stale receipts, failed checks, review contamination declarations, consumer mismatch, and budget exhaustion.
+
+### Compatibility
+
+- The shell launcher, external-spend aliases, existing budget/research helpers, and historical calibration remain available.
+- Pre-2.0 runs are preserved as unverified references; verification is not silently inferred or migrated from old artifacts.
+- No live-model quality, token-savings, latency, or real-world outcome claim is made by this release.
+
+## [1.0.0] — 2026-08-15
+
+### Changed
+
+- Ported the runtime from Claude Code agent teams to OpenAI Codex skills and subagents.
+- Moved the user-skill destination from `~/.claude/skills/solve` to `~/.agents/skills/solve`.
+- Changed in-session invocation from `/solve` to `$solve`; the `solve` shell launcher now opens Codex with that explicit skill prompt.
+- Replaced legacy team/task-directory coordination with Codex subagent controls, scoped file ownership, shared-workspace artifacts, and adaptive concurrency.
+- Made Six Hats use six fresh Codex contexts with frozen common inputs, including multi-wave execution under lower thread limits.
+- Split the large orchestrator into a compact `SKILL.md` plus progressive runtime, role, and confidence references.
+- Reframed the dollar budget as metered external research spend. The legacy `tokens=` CLI spelling remains an alias for existing users.
+- Made progress and report completeness tier-aware and documented Quick-tier dependency fallbacks.
+- Updated Parallel.ai integration to the current Task API, current base-processor price, and preflight spend-cap enforcement.
+- Made launcher installation and removal preserve unrecognized pre-existing files with timestamped backups.
+
+### Added
+
+- Codex package metadata at `agents/openai.yaml` and a top-level `VERSION` file.
+- Codex-native installer validation for the `multi_agent` feature and `agents.enabled` configuration.
+- Isolated port tests covering package structure, install behavior, real Codex skill discovery, launcher prompt/env propagation, tier counts, concurrent state/cost writes, progress/report behavior, and mocked Parallel.ai paths.
+
+### Removed
+
+- Automatic edits to Claude settings, experimental team flags, team directories, task directories, and the Claude status-line hook.
+- The non-portable per-tool call counter. Retry limits now apply to equivalent failed operations rather than all legitimate tool use.
 
 ## [0.6.0] — 2026-05-04
 

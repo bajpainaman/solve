@@ -1,72 +1,51 @@
 # Contributing to solve
 
-Thanks for considering. This skill is opinionated by design but PRs are welcome on the seams.
+The product guarantee is checkable evidence, appropriate restraint, and independent
+verification. Framework count and report length are not success metrics.
 
-## What's safe to PR
+## Changing the contract
 
-- **New frameworks.** Add a 26th framework if you have a strong case. Follow `frameworks/_TEMPLATE.md` (17 sections), match `frameworks/cynefin.md` for depth, add it to the routing table in `SKILL.md` Step 7's decider brief, update the table in README.
-- **Voice fixes.** If a framework drifts into AI vocabulary (delve, robust, comprehensive, multifaceted, etc.) or em dashes, it's a bug. PR a fix; the adversary teammate enforces this rule live but the static files can drift.
-- **Worked example continuity.** All 25 frameworks use OFTv2 migration as the canonical example. If a framework's worked example contradicts an upstream framework's output, fix it.
-- **Budget + calibration tooling.** `bin/budget-track` and `bin/calibration` are intentionally simple; if you hit a real edge case, PR.
-- **Mermaid diagram fixes.** GitHub's mermaid parser is strict. Test diagrams render cleanly on github.com before pushing.
+- Keep the gate-state vocabulary exactly FIRED, N/A, BLOCKED.
+- FIRED means executed, not passed. Preserve failed outcomes and replaced receipts.
+- N/A must cite the catalog's exact trigger and supported false applicability.
+- Unknown facts, unavailable consumers, stale inputs, and missing evidence remain BLOCKED.
+- Refutation starts blind. Consumer review binds the actual delivered report.
+- Cover omitted material claims as well as claims the builder listed.
+- Do not add confidence points for votes, framework completion, or tier choice.
 
-## What's likely to be rejected
+Use lib/solve_contract.py as the shared validator for every consumer. Do not add a
+parallel completion check based on filenames or status flags.
 
-- Adding more "soft" guidance in SKILL.md without a corresponding hard gate. The skill works because of explicit gates (regime check, kickoff guard, tool-call cap). Soft suggestions without enforcement degrade the workflow.
-- Reducing the 25 frameworks. Removing one breaks the canonical worked-example chain. If a framework feels redundant, write a justification in the PR; we'll decide together.
-- Removing the adversary teammate or its enforcement responsibilities (no-AI-vocab, question auto-conversion). The adversary is what makes the skill adversarial-by-construction.
+## Adding a method
 
-## Local development
+Add an observable trigger to gates/catalog.json and a compact framework card using
+frameworks/_TEMPLATE.md. Keep the card below 4 KB. Put optional long explanations
+under references/deep; normal runs must not read them wholesale. A method needs
+a test case showing when it fires and when it does not apply.
 
-```bash
-git clone https://github.com/bajpainaman/solve.git
-cd solve
-
-# point your global skill at this clone
-rm -f ~/.claude/skills/solve
-ln -s "$(pwd)" ~/.claude/skills/solve
-
-# run smoke tests
-bash install                                    # smoke tests run as part of install
-bin/calibration help
-bin/budget-track --help
-
-# verify each framework follows the template
-for f in frameworks/*.md; do
-  [ "$(basename "$f")" = "_TEMPLATE.md" ] && continue
-  for section in "Entry Predicate" "Operating Principles" "Pushback Patterns" "Method" "Output Schema" "Decision Hook" "Worked Example"; do
-    grep -q "^## $section\|^### $section" "$f" || echo "MISSING: $section in $(basename $f)"
-  done
-done
-```
-
-## Style
-
-- No em dashes anywhere. Use commas or periods.
-- No AI vocabulary in framework files: delve, crucial, robust, comprehensive, nuanced, multifaceted, furthermore, moreover, additionally, pivotal, landscape, tapestry, underscore, foster, showcase, intricate, vibrant, fundamental, significant.
-- Builder voice: name files, frameworks, commands explicitly. Lead with the point.
-- No exclamation marks. No hedging ("perhaps", "might be", "could potentially").
-
-## Versioning
-
-Semver-ish. Bumps:
-
-- **Patch (0.5.0 → 0.5.1)**: bug fix, doc update, framework prose polish without method changes.
-- **Minor (0.5.0 → 0.6.0)**: new framework, new bin helper, new SKILL.md step, new guarantee.
-- **Major (0.x → 1.0)**: signature change of agent-team protocol, breaking change to CLI shim.
-
-Bump `SKILL.md::version` and add a `## [X.Y.Z]` block to `CHANGELOG.md` in the same PR.
-
-## Tag + release flow
-
-After merging to main:
+## Validation
 
 ```bash
-git tag -a vX.Y.Z -m "vX.Y.Z: <one-line summary>"
-git push origin vX.Y.Z
-gh release create vX.Y.Z --notes-file CHANGELOG.md   # or write notes inline
+for f in solve install bin/* tests/test_port.sh; do bash -n "$f"; done
+python3 -m unittest discover -s tests -p 'test_*.py'
+tests/test_port.sh
+git diff --check
 ```
 
-## Reporting bugs
+Tests use temporary directories, isolated homes, and mocked paid services. Keep
+contract tests adversarial: a readable report or a valid JSON shape alone should
+not fool completion. Scorer tests may use artificial predictions, but label them
+as scorer tests and never publish their scores as model results.
 
-Open an issue with: `solve status` output, the problem statement that triggered the bug, the framework file the bug appeared in (if applicable), and the expected vs actual behavior.
+Use benchmark export/run/score for actual evaluation. Record adapter, model,
+settings, case digest, and usage provenance. Evaluate against the same corpus and
+compare changed-premise pairs; don't score polished prose as correctness.
+
+## Versioning and docs
+
+Bump VERSION and add a changelog entry together. Changes to gate schemas, CLI
+contracts, or freshness semantics require a major version. Keep the installer,
+skill references, tests, metadata, and architecture decision records synchronized.
+
+Issues live in GitHub; see docs/agents/issue-tracker.md. Domain conventions are in
+docs/agents/domain.md. Do not publish issues, PRs, or releases without task authorization.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# parallel-research — fan out research queries to Parallel.ai with WebSearch fallback
+# parallel-research — fan out research queries to Parallel.ai with web-search fallback
 #
 # Usage:
 #   bin/parallel-research <queries.json> <output-dir>
@@ -18,7 +18,54 @@ set -euo pipefail
 
 QUERIES_FILE="${1:?usage: parallel-research <queries.json> <output-dir>}"
 OUT_DIR="${2:?usage: parallel-research <queries.json> <output-dir>}"
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 mkdir -p "$OUT_DIR"
+
+PARALLEL_PROCESSOR="${SOLVE_PARALLEL_PROCESSOR:-base}"
+# Parallel's published base-processor price as of this release. Keep this
+# overrideable so accounting can be updated without changing the skill.
+PARALLEL_COST_PER_RUN="${SOLVE_PARALLEL_COST_PER_RUN:-0.01}"
+PROBE_URL="https://api.parallel.ai/v1/tasks/runs/trun_00000000000000000000000000000000"
+
+QUERY_COUNT=$(python3 - "$QUERIES_FILE" "$PARALLEL_PROCESSOR" "$PARALLEL_COST_PER_RUN" <<'PY'
+import json
+import math
+import re
+import sys
+
+with open(sys.argv[1]) as handle:
+    queries = json.load(handle)
+processor = sys.argv[2]
+if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", processor):
+    raise SystemExit(f"invalid processor name: {processor!r}")
+try:
+    cost = float(sys.argv[3])
+except ValueError:
+    raise SystemExit("SOLVE_PARALLEL_COST_PER_RUN must be numeric") from None
+if not math.isfinite(cost) or cost < 0:
+    raise SystemExit("SOLVE_PARALLEL_COST_PER_RUN must be finite and non-negative")
+if not isinstance(queries, list):
+    raise SystemExit("queries file must contain a JSON array")
+seen = set()
+for query in queries:
+    if not isinstance(query, dict):
+        raise SystemExit("every query must be a JSON object")
+    query_id = query.get("id")
+    objective = query.get("objective")
+    if not isinstance(query_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", query_id):
+        raise SystemExit(f"invalid query id: {query_id!r}")
+    if query_id in seen:
+        raise SystemExit(f"duplicate query id: {query_id}")
+    if not isinstance(objective, str) or not objective.strip() or "\0" in objective:
+        raise SystemExit(f"query {query_id} has no valid objective")
+    seen.add(query_id)
+print(len(queries))
+PY
+)
+
+COST_FILE="${SOLVE_COST_FILE:-/tmp/solve-cost-$$}"
+[ -f "$COST_FILE" ] || echo "0" > "$COST_FILE"
+export SOLVE_COST_FILE="$COST_FILE"
 
 API_KEY="${PARALLEL_API_KEY:-}"
 if [ -z "$API_KEY" ] && [ -f "$HOME/.gstack/parallel-api-key" ]; then
@@ -27,20 +74,57 @@ fi
 
 USE_PARALLEL="no"
 if [ -n "$API_KEY" ]; then
-  if curl -sSf -m 5 -H "x-api-key: $API_KEY" \
-       "https://api.parallel.ai/v1/tasks?limit=1" >/dev/null 2>&1; then
+  PROBE_CODE=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' \
+    -H "x-api-key: $API_KEY" "$PROBE_URL" 2>/dev/null || true)
+  if [ "$PROBE_CODE" = "200" ] || [ "$PROBE_CODE" = "404" ]; then
     USE_PARALLEL="yes"
   fi
 fi
 
-echo "PARALLEL_RESEARCH: backend=$([ "$USE_PARALLEL" = "yes" ] && echo "parallel.ai" || echo "websearch-fallback")"
+# Refuse the entire paid fan-out when its projected cost would exceed the
+# run's external-spend cap. The parent can narrow the query batch and retry.
+SPEND_CAP="${SOLVE_EXTERNAL_SPEND_CAP:-${SOLVE_PRESEED_SPEND:-}}"
+if [ "$SPEND_CAP" = "null" ] || [ "$SPEND_CAP" = "unlimited" ]; then
+  SPEND_CAP=""
+fi
+if [ "$USE_PARALLEL" = "yes" ] && [ -n "$SPEND_CAP" ]; then
+  BUDGET_GATE=$(python3 - "$COST_FILE" "$SPEND_CAP" "$QUERY_COUNT" "$PARALLEL_COST_PER_RUN" <<'PY'
+from decimal import Decimal, InvalidOperation
+import sys
 
-COST_FILE="${SOLVE_COST_FILE:-/tmp/solve-cost-$$}"
-[ -f "$COST_FILE" ] || echo "0" > "$COST_FILE"
+try:
+    with open(sys.argv[1]) as handle:
+        current = Decimal(handle.read().strip() or "0")
+    cap = Decimal(sys.argv[2])
+    count = Decimal(sys.argv[3])
+    per_run = Decimal(sys.argv[4])
+except (InvalidOperation, OSError) as exc:
+    raise SystemExit(f"invalid spend ledger or cap: {exc}") from None
+if any(value < 0 or not value.is_finite() for value in (current, cap, count, per_run)):
+    raise SystemExit("spend ledger, cap, query count, and per-run cost must be finite and non-negative")
+projected = current + count * per_run
+print("ok" if projected <= cap else "exceeds")
+print(f"{current} {projected} {cap}")
+PY
+  ) || BUDGET_GATE="invalid"
+  case "$BUDGET_GATE" in
+    exceeds$'\n'*)
+      printf 'PARALLEL_RESEARCH: projected spend %s exceeds cap; using web fallback\n' \
+        "$(printf '%s\n' "$BUDGET_GATE" | tail -n 1)" >&2
+      USE_PARALLEL="no"
+      ;;
+    invalid*)
+      echo "PARALLEL_RESEARCH: invalid spend cap or ledger; using web fallback" >&2
+      USE_PARALLEL="no"
+      ;;
+  esac
+fi
+
+echo "PARALLEL_RESEARCH: backend=$([ "$USE_PARALLEL" = "yes" ] && echo "parallel.ai" || echo "websearch-fallback")"
 
 submit_parallel() {
   local objective="$1"
-  local processor="${2:-base}"
+  local processor="${2:-$PARALLEL_PROCESSOR}"
   curl -sS -X POST "https://api.parallel.ai/v1/tasks/runs" \
     -H "x-api-key: $API_KEY" \
     -H "Content-Type: application/json" \
@@ -104,38 +188,49 @@ run_query() {
 
   if [ "$USE_PARALLEL" = "yes" ]; then
     local submit_resp
-    submit_resp=$(submit_parallel "$objective" "base" || echo '{}')
+    submit_resp=$(submit_parallel "$objective" "$PARALLEL_PROCESSOR" || echo '{}')
     local run_id
     run_id=$(printf %s "$submit_resp" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("run_id",""))' 2>/dev/null || echo "")
-    if [ -n "$run_id" ]; then
+    if [[ "$run_id" =~ ^trun_[A-Za-z0-9]+$ ]]; then
       echo "  -> $id submitted run_id=$run_id"
       local result
       result=$(poll_parallel "$run_id" 120 || echo '{"error":"poll failed"}')
       printf '{"id":"%s","backend":"parallel.ai","run_id":"%s","result":%s}\n' \
         "$id" "$run_id" "$result" > "$out"
-      python3 -c "
-import json
-with open('$COST_FILE') as f: c = float(f.read().strip() or '0')
-c += 0.05
-with open('$COST_FILE','w') as f: f.write(str(c))
-" 2>/dev/null || true
+      "$SCRIPT_DIR/cost-track" "$PARALLEL_COST_PER_RUN" >/dev/null 2>&1 || true
       return 0
     fi
   fi
 
-  printf '{"id":"%s","backend":"websearch-fallback","objective":%s,"note":"parent agent should run WebSearch"}\n' \
+  printf '{"id":"%s","backend":"websearch-fallback","objective":%s,"note":"parent agent should use the available Codex web search"}\n' \
     "$id" "$(printf %s "$objective" | python3 -c 'import sys,json;print(json.dumps(sys.stdin.read()))')" > "$out"
 }
 
-python3 - "$QUERIES_FILE" "$OUT_DIR" <<'PY' | while IFS=$'\t' read -r id objective; do
+while IFS= read -r -d '' id && IFS= read -r -d '' objective; do
   run_query "$id" "$objective" &
-done
-import json, sys, os
+done < <(python3 - "$QUERIES_FILE" <<'PY'
+import json
+import re
+import sys
+
 with open(sys.argv[1]) as f:
     queries = json.load(f)
+if not isinstance(queries, list):
+    raise SystemExit("queries file must contain a JSON array")
+seen = set()
 for q in queries:
-    print(f"{q['id']}\t{q['objective']}")
+    query_id = q.get("id")
+    objective = q.get("objective")
+    if not isinstance(query_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", query_id):
+        raise SystemExit(f"invalid query id: {query_id!r}")
+    if query_id in seen:
+        raise SystemExit(f"duplicate query id: {query_id}")
+    if not isinstance(objective, str) or not objective.strip() or "\0" in objective:
+        raise SystemExit(f"query {query_id} has no objective")
+    seen.add(query_id)
+    sys.stdout.buffer.write(query_id.encode() + b"\0" + objective.encode() + b"\0")
 PY
+)
 
 wait
 

@@ -1,46 +1,15 @@
-# /solve report — {{slug}}
+# Adaptive report contract
 
-**Problem:** {{problem}}
-**Run:** {{session_id}}
-**Generated:** {{timestamp}}
+The report is assembled by lib/solve_output.py from validated gate receipts.
 
-## Decision
+Required content:
+- Recommendation, conditions, and next action.
+- Material claims with kinds and declared consumer acceptance.
+- Evidence checks and independent refutation.
+- Failed checks, coverage gaps, unverified claims, and forecast limits.
+- Compact gate receipts and links to applicable methods only.
+- Links to the separate consumer and completion receipts.
 
-> {{recommendation}}
-
-## Confidence
-
-- Rubric: **{{rubric}}**/10
-- Bayesian Posterior: **{{posterior}}**
-- Bucket: **{{bucket}}**
-
-## Dissent
-
-{{dissent_block}}
-
-## Synthesis (Minto)
-
-{{minto_block}}
-
-## Phase 1: Define
-
-{{define_block}}
-
-## Phase 2: Systems
-
-{{systems_block}}
-
-## Phase 3: Decide
-
-{{decide_block}}
-
-## Handoffs
-
-{{handoff_block}}
-
-## Appendix
-
-- Total queries fired: {{query_count}}
-- Total cost: ${{cost}}
-- Frameworks completed: {{framework_count}}
-- Adversary score: {{adv_score}}/10
+Rendering alone is not completion. Keep the report immutable after its consumer
+review. Do not substitute old confidence scores, framework counts, or file
+existence for the shared validator.

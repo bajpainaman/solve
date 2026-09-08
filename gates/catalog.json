@@ -1,0 +1,206 @@
+{
+  "version": 2,
+  "states": [
+    "FIRED",
+    "N/A",
+    "BLOCKED"
+  ],
+  "gates": [
+    {
+      "id": "abstraction-ladder",
+      "kind": "framework",
+      "fact": "framing_unclear",
+      "trigger": "The request leaves the decision's goal or level of scope unresolved.",
+      "method": "frameworks/abstraction-ladder.md"
+    },
+    {
+      "id": "first-principles",
+      "kind": "framework",
+      "fact": "assumptions_decisive",
+      "trigger": "An unverified inherited assumption could change the recommendation.",
+      "method": "frameworks/first-principles.md"
+    },
+    {
+      "id": "issue-tree",
+      "kind": "framework",
+      "fact": "unresolved_subquestions",
+      "trigger": "Several unresolved subquestions must be answered to decide the request.",
+      "method": "frameworks/issue-tree.md"
+    },
+    {
+      "id": "ishikawa",
+      "kind": "framework",
+      "fact": "cause_unknown",
+      "trigger": "A named adverse effect has competing causal explanations that affect the choice.",
+      "method": "frameworks/ishikawa.md"
+    },
+    {
+      "id": "inversion-define",
+      "kind": "framework",
+      "fact": "failure_paths_unexamined",
+      "trigger": "A credible failure path has not been examined and could disqualify an option.",
+      "method": "frameworks/inversion-define.md"
+    },
+    {
+      "id": "zwicky-box",
+      "kind": "framework",
+      "fact": "interacting_design_axes",
+      "trigger": "At least two independently variable design dimensions could produce a missing option.",
+      "method": "frameworks/zwicky-box.md"
+    },
+    {
+      "id": "conflict-resolution-diagram",
+      "kind": "framework",
+      "fact": "stakeholder_conflict",
+      "trigger": "Named stakeholders have opposed requirements that affect the decision.",
+      "method": "frameworks/conflict-resolution-diagram.md"
+    },
+    {
+      "id": "productive-thinking",
+      "kind": "framework",
+      "fact": "candidate_set_incomplete",
+      "trigger": "The stated goal lacks a plausible candidate set or an executable path.",
+      "method": "frameworks/productive-thinking.md"
+    },
+    {
+      "id": "iceberg",
+      "kind": "framework",
+      "fact": "recurring_pattern",
+      "trigger": "Repeated observed events suggest a structural cause relevant to the decision.",
+      "method": "frameworks/iceberg.md"
+    },
+    {
+      "id": "connection-circles",
+      "kind": "framework",
+      "fact": "causal_interactions",
+      "trigger": "Interactions between changing variables could reverse the apparent effect of an option.",
+      "method": "frameworks/connection-circles.md"
+    },
+    {
+      "id": "concept-map",
+      "kind": "framework",
+      "fact": "dependency_map_needed",
+      "trigger": "Unclear dependencies between named entities could change feasibility or scope.",
+      "method": "frameworks/concept-map.md"
+    },
+    {
+      "id": "balancing-loop",
+      "kind": "framework",
+      "fact": "balancing_cycle",
+      "trigger": "Evidence identifies a balancing feedback cycle relevant to an option.",
+      "method": "frameworks/balancing-loop.md"
+    },
+    {
+      "id": "reinforcing-loop",
+      "kind": "framework",
+      "fact": "reinforcing_cycle",
+      "trigger": "Evidence identifies a reinforcing feedback cycle relevant to an option.",
+      "method": "frameworks/reinforcing-loop.md"
+    },
+    {
+      "id": "cynefin",
+      "kind": "framework",
+      "fact": "decision_regime_unclear",
+      "trigger": "Uncertainty about cause and effect changes whether to commit, experiment, or stabilize.",
+      "method": "frameworks/cynefin.md"
+    },
+    {
+      "id": "eisenhower",
+      "kind": "framework",
+      "fact": "competing_deadlines",
+      "trigger": "Competing obligations or deadlines change which action should happen first.",
+      "method": "frameworks/eisenhower.md"
+    },
+    {
+      "id": "impact-effort",
+      "kind": "framework",
+      "fact": "effort_tradeoff",
+      "trigger": "Material differences in expected impact and effort could change option priority.",
+      "method": "frameworks/impact-effort.md"
+    },
+    {
+      "id": "decision-matrix",
+      "kind": "framework",
+      "fact": "comparable_options",
+      "trigger": "Two or more feasible options can be compared on explicit decision criteria.",
+      "method": "frameworks/decision-matrix.md"
+    },
+    {
+      "id": "second-order",
+      "kind": "framework",
+      "fact": "downstream_effects",
+      "trigger": "Plausible downstream consequences could change the preferred option.",
+      "method": "frameworks/second-order.md"
+    },
+    {
+      "id": "ladder-of-inference",
+      "kind": "framework",
+      "fact": "inference_gap",
+      "trigger": "A deciding conclusion contains an unsupported step between observation and action.",
+      "method": "frameworks/ladder-of-inference.md"
+    },
+    {
+      "id": "ooda-loop",
+      "kind": "framework",
+      "fact": "changing_conditions",
+      "trigger": "Changing conditions or limited predictability require an observation-and-action cycle.",
+      "method": "frameworks/ooda-loop.md"
+    },
+    {
+      "id": "hard-choice",
+      "kind": "framework",
+      "fact": "value_parity",
+      "trigger": "Leading options remain on a par because of value tradeoffs or consequential irreversibility.",
+      "method": "frameworks/hard-choice.md"
+    },
+    {
+      "id": "sbi",
+      "kind": "framework",
+      "fact": "behavior_conversation",
+      "trigger": "Executing the recommendation requires a named person's behavior change or a difficult conversation.",
+      "method": "frameworks/sbi.md"
+    },
+    {
+      "id": "six-hats",
+      "kind": "framework",
+      "fact": "unresolved_perspectives",
+      "trigger": "Specific unresolved stakeholder perspectives could change the recommendation, or the user explicitly requests Six Hats.",
+      "method": "frameworks/six-hats.md"
+    },
+    {
+      "id": "confidence-speed-quality",
+      "kind": "framework",
+      "fact": "execution_mode_unclear",
+      "trigger": "Uncertainty and reversal cost leave the appropriate execution mode unresolved.",
+      "method": "frameworks/confidence-speed-quality.md"
+    },
+    {
+      "id": "minto",
+      "kind": "framework",
+      "fact": "synthesis_complex",
+      "trigger": "Several distinct arguments need synthesis for the consumer to understand the decision.",
+      "method": "frameworks/minto.md"
+    },
+    {
+      "id": "evidence",
+      "kind": "required",
+      "fact": null,
+      "trigger": "Every strategic decision requires checks of its critical claims.",
+      "method": "references/confidence.md"
+    },
+    {
+      "id": "refutation",
+      "kind": "required",
+      "fact": null,
+      "trigger": "Every strategic decision requires independent refutation of its critical claims.",
+      "method": "references/roles.md"
+    },
+    {
+      "id": "consumer",
+      "kind": "required",
+      "fact": null,
+      "trigger": "Every strategic decision requires verification through the delivered report and declared consumer surfaces.",
+      "method": "references/roles.md"
+    }
+  ]
+}

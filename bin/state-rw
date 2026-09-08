@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# state-rw — read/write JSON keys in $RUN_DIR/state.json for resume-safe /solve runs
+# state-rw — read/write JSON keys for resume-safe solve runs
 # Usage:
 #   state-rw read  <run-dir> <key>
 #   state-rw write <run-dir> <key> <value-json>
@@ -17,43 +17,85 @@ case "$CMD" in
     PROBLEM="${4:?problem required}"
     if [ ! -f "$STATE" ]; then
       python3 - "$STATE" "$SLUG" "$PROBLEM" <<'PY'
-import json, sys, os, time
+import fcntl
+import json
+import os
+import sys
+import tempfile
+import time
+
 path, slug, problem = sys.argv[1], sys.argv[2], sys.argv[3]
-with open(path, 'w') as f:
-    json.dump({
+lock_path = path + ".lock"
+with open(lock_path, "a+") as lock:
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    if os.path.exists(path):
+        raise SystemExit(0)
+    state = {
         "slug": slug,
         "problem": problem,
         "phase": "intake",
         "completed_frameworks": [],
         "started_at": time.time(),
-    }, f, indent=2)
+    }
+    fd, temp_path = tempfile.mkstemp(prefix=".state.", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w") as handle:
+            json.dump(state, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
 PY
     fi
     ;;
   read)
     KEY="${3:?key required}"
     [ -f "$STATE" ] || { echo "null"; exit 0; }
-    python3 -c "
-import json,sys
-with open('$STATE') as f: s = json.load(f)
-v = s.get('$KEY')
-print(json.dumps(v) if v is not None else 'null')
-"
+    python3 - "$STATE" "$KEY" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1]) as handle:
+    state = json.load(handle)
+value = state.get(sys.argv[2])
+print(json.dumps(value) if value is not None else "null")
+PY
     ;;
   write)
     KEY="${3:?key required}"
     VAL="${4:?value-json required}"
-    [ -f "$STATE" ] || echo '{}' > "$STATE"
     python3 - "$STATE" "$KEY" "$VAL" <<'PY'
-import json, sys
+import fcntl
+import json
+import os
+import sys
+import tempfile
+
 path, key, val_json = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
     val = json.loads(val_json)
 except Exception:
     val = val_json
-with open(path) as f: s = json.load(f)
-s[key] = val
-with open(path, 'w') as f: json.dump(s, f, indent=2)
+with open(path + ".lock", "a+") as lock:
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    try:
+        with open(path) as handle:
+            state = json.load(handle)
+    except FileNotFoundError:
+        state = {}
+    state[key] = val
+    fd, temp_path = tempfile.mkstemp(prefix=".state.", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w") as handle:
+            json.dump(state, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
 print(f"set {key}")
 PY
     ;;

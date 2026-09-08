@@ -1,163 +1,234 @@
 #!/usr/bin/env bash
-# solve — CLI shim that launches Claude Code with /solve preloaded
+# solve — CLI shim that launches Codex with $solve preloaded
 #
 # Usage:
-#   solve                              opens Claude Code, types /solve (intake prompts)
-#   solve "<one-line problem>"         types /solve "<problem>"
-#   solve <path/to/brief.md>           types /solve <path>
-#   solve --help                       this help
-#   solve --update                     re-runs the installer to refresh the skill
-#   solve --uninstall                  removes the global skill, shim, and rc edits
-#
-# This shim runs `claude` with `/solve $@` as the first turn so the skill kicks in
-# immediately. Requires Claude Code (>=2.1.32) on PATH and /solve installed
-# at ~/.claude/skills/solve.
+#   solve                              open Codex and start interactive intake
+#   solve "<one-line problem>"         start $solve with a problem
+#   solve <path/to/brief.md>           start $solve with a brief path
+#   solve --tier quick|standard|deep  preselect the analysis tier
+#   solve --budget time=30min spend=5 set time/external-research caps
+#   solve progress [--watch]          show the newest run's progress
+#   solve calibrate <command>         inspect confidence calibration
+#   solve --status                    show installation/runtime status
+#   solve --update                    refresh the installed skill
+#   solve --uninstall                 remove the Codex skill and shim
 
 set -euo pipefail
 
-if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
-  exit 0
-fi
+CODEX_BIN="${CODEX_BIN:-codex}"
+SKILL="${SOLVE_SKILL_ROOT:-$HOME/.agents/skills/solve}"
+REMOTE_INSTALL="https://raw.githubusercontent.com/bajpainaman/solve/main/install"
 
-if ! command -v claude >/dev/null 2>&1; then
-  echo "ERROR: claude CLI not on PATH. Install Claude Code: https://docs.claude.com/claude-code" >&2
-  exit 1
-fi
+usage() {
+  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+}
 
-SKILL="$HOME/.claude/skills/solve"
-if [ ! -d "$SKILL" ] && [ "${1:-}" != "--update" ]; then
-  echo "ERROR: /solve skill not installed at $SKILL" >&2
-  echo "Install: bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/main/install)" >&2
-  exit 1
-fi
+resolve_path() {
+  python3 - "$1" <<'PY'
+import sys
+from pathlib import Path
+
+print(Path(sys.argv[1]).expanduser().resolve())
+PY
+}
+
+require_codex() {
+  if ! command -v "$CODEX_BIN" >/dev/null 2>&1; then
+    echo "ERROR: Codex CLI not on PATH. Install it from https://developers.openai.com/codex/cli" >&2
+    exit 1
+  fi
+}
+
+require_skill() {
+  if [ ! -f "$SKILL/SKILL.md" ]; then
+    echo "ERROR: \$solve is not installed at $SKILL" >&2
+    echo "Install: bash <(curl -fsSL $REMOTE_INSTALL)" >&2
+    exit 1
+  fi
+}
 
 case "${1:-}" in
+  --help|-h|help)
+    usage
+    exit 0
+    ;;
   update|up|--update|-u)
-    if [ -d "$SKILL" ] && [ -L "$SKILL" ]; then
-      SRC=$(readlink "$SKILL")
-    elif [ -d "$SKILL" ]; then
-      SRC="$SKILL"
-    else
-      SRC=""
+    require_codex
+    SOURCE=""
+    if [ -L "$SKILL" ]; then
+      SOURCE=$(resolve_path "$SKILL")
+    elif [ -d "$SKILL/.git" ]; then
+      SOURCE="$SKILL"
     fi
-    if [ -n "$SRC" ] && [ -x "$SRC/install" ]; then
-      exec bash "$SRC/install"
+
+    if [ -n "$SOURCE" ] && [ -x "$SOURCE/install" ] && [ -d "$SOURCE/.git" ]; then
+      echo "Updating source at $SOURCE..."
+      if git -C "$SOURCE" pull --ff-only; then
+        exec bash "$SOURCE/install"
+      fi
+      echo "Local update failed; falling back to the upstream installer." >&2
+    elif [ -n "$SOURCE" ] && [ -x "$SOURCE/install" ]; then
+      exec bash "$SOURCE/install"
     fi
-    echo "Re-running remote installer..."
-    exec bash <(curl -fsSL https://raw.githubusercontent.com/bajpainaman/solve/main/install)
+
+    echo "Running upstream installer..."
+    exec bash <(curl -fsSL "$REMOTE_INSTALL")
     ;;
   uninstall|remove|--uninstall)
     set +e
-    if [ -L "$SKILL" ] || [ -d "$SKILL" ]; then
-      rm -rf "$SKILL"
-      echo "removed $SKILL"
+    if [ -L "$SKILL" ]; then
+      rm -f -- "$SKILL"
+      echo "removed $SKILL symlink"
+    elif [ -d "$SKILL" ]; then
+      ARCHIVE="$SKILL.uninstalled.$(date +%Y%m%d-%H%M%S)"
+      mv -- "$SKILL" "$ARCHIVE"
+      echo "moved $SKILL to recoverable archive $ARCHIVE"
     fi
-    SHIM="$HOME/.local/bin/solve"
+
+    SHIM="${SOLVE_SHIM_DIR:-$HOME/.local/bin}/solve"
     if [ -L "$SHIM" ] || [ -f "$SHIM" ]; then
-      rm -f "$SHIM"
-      echo "removed $SHIM"
+      if [ -f "$SHIM" ] && grep -Fq '# solve — CLI shim that launches Codex with $solve preloaded' "$SHIM" 2>/dev/null; then
+        rm -f -- "$SHIM"
+        echo "removed $SHIM"
+      else
+        echo "left unrecognized launcher in place: $SHIM"
+      fi
     fi
+
     for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
       if [ -f "$rc" ] && grep -q '# solve-cli >>>' "$rc" 2>/dev/null; then
-        cp "$rc" "$rc.solve-bak"
+        RC_BACKUP="$rc.solve-bak.$(date +%Y%m%d-%H%M%S)"
+        cp -- "$rc" "$RC_BACKUP"
         python3 - "$rc" <<'PY'
-import sys, re
-p = sys.argv[1]
-with open(p) as f: s = f.read()
-s = re.sub(r'\n?# solve-cli >>>.*?# solve-cli <<<\n?', '\n', s, flags=re.DOTALL)
-with open(p, 'w') as f: f.write(s)
+import re
+import sys
+
+path = sys.argv[1]
+with open(path) as handle:
+    text = handle.read()
+text = re.sub(r"\n?# solve-cli >>>.*?# solve-cli <<<\n?", "\n", text, flags=re.DOTALL)
+with open(path, "w") as handle:
+    handle.write(text)
 PY
-        echo "cleaned $rc (backup at $rc.solve-bak)"
+        echo "cleaned $rc (backup at $RC_BACKUP)"
       fi
     done
-    echo "Uninstalled. Note: ~/.gstack/parallel-api-key and ~/.claude/settings.json env left intact."
+    echo "Uninstalled Codex integration. Parallel.ai data and any legacy Claude installation were left intact."
     exit 0
     ;;
   progress|--progress)
-    # solve progress: print snapshot of the most-recent run dir under .context/solve/
+    require_skill
     if [ ! -x "$SKILL/bin/progress" ]; then
       echo "ERROR: progress helper missing at $SKILL/bin/progress" >&2
-      echo "Run: solve --update" >&2
       exit 1
     fi
-    LATEST_RUN=$(ls -td .context/solve/*/ 2>/dev/null | head -1)
+    LATEST_RUN=$(python3 - .context/solve <<'PY' 2>/dev/null || true
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+directories = [path for path in root.iterdir() if path.is_dir()] if root.is_dir() else []
+if directories:
+    print(max(directories, key=lambda path: path.stat().st_mtime_ns))
+PY
+)
     if [ -z "$LATEST_RUN" ]; then
-      echo "no /solve runs found in .context/solve/" >&2
+      echo "no solve runs found in .context/solve/" >&2
       exit 1
     fi
     shift
-    exec "$SKILL/bin/progress" --run-dir "${LATEST_RUN%/}" "$@"
+    exec "$SKILL/bin/progress" --run-dir "$LATEST_RUN" "$@"
     ;;
   calibrate|--calibrate)
-    # solve calibrate <subcommand>
+    require_skill
     if [ ! -x "$SKILL/bin/calibration" ]; then
       echo "ERROR: calibration helper missing at $SKILL/bin/calibration" >&2
-      echo "Run: solve --update" >&2
       exit 1
     fi
     shift
     exec "$SKILL/bin/calibration" "$@"
     ;;
   status|--status|version|--version|-V)
-    SKILL_VER=$(grep -E '^version:' "$SKILL/SKILL.md" 2>/dev/null | head -1 | awk '{print $2}')
+    require_codex
+    require_skill
+    SKILL_VER=$(tr -d '[:space:]' < "$SKILL/VERSION" 2>/dev/null || true)
     echo "solve CLI shim:   $0"
     echo "skill location:   $SKILL"
-    if [ -L "$SKILL" ]; then echo "skill source:     $(readlink "$SKILL")"; fi
+    if [ -L "$SKILL" ]; then echo "skill source:     $(resolve_path "$SKILL")"; fi
     echo "skill version:    ${SKILL_VER:-unknown}"
-    echo "claude version:   $(claude --version 2>/dev/null | head -1)"
+    echo "codex version:    $("$CODEX_BIN" --version 2>/dev/null | head -1)"
+    if "$CODEX_BIN" features list 2>/dev/null | awk '$1 == "multi_agent" && $NF == "true" { found=1 } END { exit !found }'; then
+      echo "subagents:        enabled"
+    else
+      echo "subagents:        unavailable or disabled"
+    fi
     if [ -n "${PARALLEL_API_KEY:-}" ] || [ -s "$HOME/.gstack/parallel-api-key" ]; then
       echo "parallel.ai key:  configured"
     else
-      echo "parallel.ai key:  not configured (run $SKILL/bin/parallel-setup)"
-    fi
-    if [ "${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-}" = "1" ]; then
-      echo "agent-teams flag: enabled in shell env"
-    elif [ -f "$HOME/.claude/settings.json" ] && \
-         python3 -c "import json,sys;d=json.load(open('$HOME/.claude/settings.json'));sys.exit(0 if d.get('env',{}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS')=='1' else 1)" 2>/dev/null; then
-      echo "agent-teams flag: enabled in settings.json"
-    else
-      echo "agent-teams flag: NOT enabled (run solve --update)"
+      echo "parallel.ai key:  not configured (optional: $SKILL/bin/parallel-setup)"
     fi
     exit 0
     ;;
 esac
 
-# Force agent-teams flag for the spawned claude process. The skill requires it,
-# and inheriting from settings.json alone leaves a window where an already-
-# running shell (which never sourced the rc) misses it. Setting it here
-# guarantees /solve sees it no matter how the user got to this shim.
-export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+require_codex
+require_skill
+export SOLVE_SKILL_ROOT="$SKILL"
 
-# --budget flag pre-seeds Step 0.6 (budget intake) so the skill skips the
-# interactive AskUserQuestion. Format: --budget time=15min tokens=$5
-# Either or both can be specified. Unrecognized values are ignored.
+# These environment variables let the skill skip the matching intake prompts.
 PRESEED_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --tier)
-      shift
-      case "$1" in
-        quick|standard|deep) export SOLVE_PRESEED_TIER="$1"; shift ;;
-        *)                   echo "ERROR: --tier must be quick|standard|deep" >&2; exit 2 ;;
+      [ $# -ge 2 ] || { echo "ERROR: --tier requires quick|standard|deep" >&2; exit 2; }
+      case "$2" in
+        quick|standard|deep) export SOLVE_PRESEED_TIER="$2"; shift 2 ;;
+        *) echo "ERROR: --tier must be quick|standard|deep" >&2; exit 2 ;;
       esac
       ;;
     --budget)
       shift
-      while [ $# -gt 0 ] && [[ "$1" =~ ^(time|tokens)= ]]; do
+      while [ $# -gt 0 ] && [[ "$1" =~ ^(time|spend|tokens)= ]]; do
         case "$1" in
-          time=5min|time=300)         export SOLVE_PRESEED_TIME=300; shift ;;
-          time=15min|time=900)        export SOLVE_PRESEED_TIME=900; shift ;;
-          time=30min|time=1800)       export SOLVE_PRESEED_TIME=1800; shift ;;
-          time=1h|time=60min|time=3600) export SOLVE_PRESEED_TIME=3600; shift ;;
-          time=unlimited|time=null)   export SOLVE_PRESEED_TIME=null; shift ;;
-          tokens=\$1|tokens=1)        export SOLVE_PRESEED_TOKENS=1; shift ;;
-          tokens=\$5|tokens=5)        export SOLVE_PRESEED_TOKENS=5; shift ;;
-          tokens=\$20|tokens=20)      export SOLVE_PRESEED_TOKENS=20; shift ;;
-          tokens=unlimited|tokens=null) export SOLVE_PRESEED_TOKENS=null; shift ;;
-          *) shift ;;
+          time=*)
+            RAW_TIME=${1#time=}
+            case "$RAW_TIME" in
+              unlimited|null) export SOLVE_PRESEED_TIME=null ;;
+              *min)
+                TIME_NUMBER=${RAW_TIME%min}
+                [[ "$TIME_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: invalid time budget: $RAW_TIME" >&2; exit 2; }
+                export SOLVE_PRESEED_TIME=$((10#$TIME_NUMBER * 60))
+                ;;
+              *h)
+                TIME_NUMBER=${RAW_TIME%h}
+                [[ "$TIME_NUMBER" =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: invalid time budget: $RAW_TIME" >&2; exit 2; }
+                export SOLVE_PRESEED_TIME=$((10#$TIME_NUMBER * 3600))
+                ;;
+              *)
+                [[ "$RAW_TIME" =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: invalid time budget: $RAW_TIME" >&2; exit 2; }
+                export SOLVE_PRESEED_TIME="$RAW_TIME"
+                ;;
+            esac
+            ;;
+          spend=*|tokens=*)
+            RAW_SPEND=${1#*=}
+            RAW_SPEND=${RAW_SPEND#\$}
+            case "$RAW_SPEND" in
+              unlimited|null) export SOLVE_PRESEED_SPEND=null ;;
+              *)
+                [[ "$RAW_SPEND" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "ERROR: invalid external spend budget: $RAW_SPEND" >&2; exit 2; }
+                export SOLVE_PRESEED_SPEND="$RAW_SPEND"
+                ;;
+            esac
+            ;;
         esac
+        shift
       done
+      ;;
+    --)
+      shift
+      PRESEED_ARGS+=("$@")
+      break
       ;;
     *)
       PRESEED_ARGS+=("$1")
@@ -166,8 +237,17 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ ${#PRESEED_ARGS[@]} -eq 0 ]; then
-  exec claude "/solve"
-else
-  exec claude "/solve ${PRESEED_ARGS[*]}"
+# Keep the old variable for state files created before the Codex port. It now
+# means external research/API spend, not Codex subscription or model tokens.
+if [ -n "${SOLVE_PRESEED_SPEND+x}" ]; then
+  export SOLVE_PRESEED_TOKENS="$SOLVE_PRESEED_SPEND"
 fi
+
+PROMPT='$solve'
+if [ ${#PRESEED_ARGS[@]} -gt 0 ]; then
+  printf -v PROBLEM_TEXT '%s ' "${PRESEED_ARGS[@]}"
+  PROBLEM_TEXT=${PROBLEM_TEXT% }
+  PROMPT="$PROMPT $PROBLEM_TEXT"
+fi
+
+exec "$CODEX_BIN" "$PROMPT"

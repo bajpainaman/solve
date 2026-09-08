@@ -1,19 +1,29 @@
 #!/usr/bin/env bash
-# cost-track — increment the running cost ledger for a /solve run
+# cost-track — increment the metered external-spend ledger for a solve run
 # Usage: cost-track <amount-in-usd>
 
 set -euo pipefail
 AMOUNT="${1:-0}"
 COST_FILE="${SOLVE_COST_FILE:-/tmp/solve-cost-default}"
-[ -f "$COST_FILE" ] || echo "0" > "$COST_FILE"
 
 python3 - "$COST_FILE" "$AMOUNT" <<'PY'
-import sys, os
+import fcntl
+import math
+import os
+import sys
+
 path, amt = sys.argv[1], float(sys.argv[2])
-with open(path) as f:
+if not math.isfinite(amt) or amt < 0:
+    raise SystemExit("amount must be a finite non-negative number")
+with open(path, "a+") as f:
+    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+    f.seek(0)
     cur = float(f.read().strip() or "0")
-cur += amt
-with open(path, 'w') as f:
+    cur += amt
+    f.seek(0)
+    f.truncate()
     f.write(f"{cur:.4f}")
+    f.flush()
+    os.fsync(f.fileno())
 print(f"{cur:.4f}")
 PY

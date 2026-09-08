@@ -11,12 +11,14 @@
 #   parallel-setup --help             this help
 #
 # Storage location: $HOME/.gstack/parallel-api-key (mode 0600)
-# /solve reads PARALLEL_API_KEY env var first, then falls back to this file.
+# $solve reads PARALLEL_API_KEY first, then falls back to this file.
 
 set -euo pipefail
 
 KEY_FILE="$HOME/.gstack/parallel-api-key"
-PROBE_URL="https://api.parallel.ai/v1/tasks?limit=1"
+# Probe a deliberately nonexistent run through the current Task API. An
+# authenticated request returns 404; an invalid key returns 401/403.
+PROBE_URL="https://api.parallel.ai/v1/tasks/runs/trun_00000000000000000000000000000000"
 
 mask() {
   local k="$1"
@@ -27,10 +29,13 @@ mask() {
 
 probe() {
   local key="$1"
-  if curl -sSf -m 8 -H "x-api-key: $key" "$PROBE_URL" >/dev/null 2>&1; then
-    return 0
-  fi
-  return 1
+  local code
+  code=$(curl -sS -m 8 -o /dev/null -w '%{http_code}' \
+    -H "x-api-key: $key" "$PROBE_URL" 2>/dev/null || true)
+  case "$code" in
+    200|404) return 0 ;;
+    *)       return 1 ;;
+  esac
 }
 
 store() {
@@ -120,7 +125,7 @@ set_key_flow() {
     echo "STORED: $KEY_FILE (mode 600)"
     echo "STATUS: ok ($(mask "$trimmed"))"
     echo ""
-    echo "Done. /solve will pick this up automatically on next run."
+    echo "Done. \$solve will pick this up automatically on next run."
   else
     echo "PROBE FAILED. Possible causes:"
     echo "  - key is invalid"
