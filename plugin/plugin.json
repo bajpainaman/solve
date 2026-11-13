@@ -1,0 +1,36 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "solve",
+  "version": "0.1.1",
+  "description": "Evidence-based decisions, self-contained artifacts, and clear writing. Loads only the workflow needed and preserves uncertainty, dissent, and verification limits.",
+  "author": {
+    "name": "Naman Bajpai"
+  },
+  "repository": "https://github.com/bajpainaman/solve",
+  "homepage": "https://github.com/bajpainaman/solve",
+  "license": "MIT",
+  "keywords": [
+    "decisions",
+    "research",
+    "artifacts",
+    "writing",
+    "verification"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Solve",
+        "shortDescription": "Decisions, artifacts, writing",
+        "longDescription": "Route decisions, artifacts, writing, and short answers. Consequential decisions use checked claims, a fresh blind refuter, and a separate review of the delivered result. Includes a portable HTML renderer, 32 artifact patterns, writing rules, and an evidence ledger. Uses available host tools; missing capabilities remain explicit. No server or separate model API key is required.",
+        "developerName": "Naman Bajpai",
+        "category": "Productivity",
+        "capabilities": [],
+        "defaultPrompt": [
+          "Help me decide. Check the evidence, challenge the recommendation, and produce a clear decision memo.",
+          "Turn this brief into a useful artifact with sources, unknowns, and a concrete next action.",
+          "Rewrite this clearly while preserving its facts, numbers, uncertainty, and my voice."
+        ]
+      }
+    }
+  }
+}

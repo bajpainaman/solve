@@ -1,6 +1,8 @@
 """Template catalog integrity and routing. No model calls."""
 
 from pathlib import Path
+import contextlib
+import io
 import sys
 import unittest
 from unittest.mock import patch
@@ -88,6 +90,18 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual(t.main(["show", "pr-review"]), 0)
             self.assertEqual(t.main(["show", "nope"]), 2)
             self.assertEqual(t.main(["match", "make slides", "--json"]), 0)
+
+    def test_portable_routing_never_discovers_or_suggests_unbundled_html(self):
+        with patch.object(t, "html_artifact_dir", side_effect=AssertionError("should not inspect external plugins")):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                self.assertEqual(t.main(["show", "pr-review", "--portable"]), 0)
+                self.assertEqual(t.main(["show", "decision-memo", "--portable"]), 0)
+                self.assertEqual(t.main(["show", "prompt-tuner", "--portable"]), 0)
+            self.assertNotIn("html-sync", output.getvalue())
+            self.assertIn("bin/artifact build", output.getvalue())
+            self.assertIn("--portable-html", output.getvalue())
+            self.assertIn("host browser workflow", output.getvalue())
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@
 node_modules/
 __pycache__/
 *.pyc
+/dist/
 # Third-party Vale packages for write/. `vale sync` downloads the pinned versions.
 write/vale/styles/Google/
 write/vale/styles/Readability/
