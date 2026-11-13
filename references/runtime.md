@@ -45,7 +45,9 @@ budget checks again. Repeated finalization preserves the original completion.
 - evidence/: source captures and expected/observed probe output.
 - frameworks/: only methods whose triggers fired.
 - reviews/: original-input bundles, independent framing, and review receipts.
-- render.json: the report path/hash and the decision digest used to render it.
+- render.json: the report path/hash, any HTML view path/hash under subject.views,
+  and the decision digest used to render it.
+- prose/: advisory simplify-writing lint input and findings from bin/prose-check.
 - completion.json: the final binding to the report and its consumer receipt.
 - state.json: operational metadata, recommendation, next_action, budgets, and timestamps.
 

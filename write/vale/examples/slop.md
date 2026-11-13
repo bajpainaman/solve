@@ -1,0 +1,3 @@
+# Webhook retries
+
+Great question! It's important to note that webhook delivery is a crucial part of our ecosystem. I've implemented a robust, comprehensive retry mechanism that seamlessly handles transient failures — ensuring that no event is ever lost. Essentially, when a delivery fails, the system will intelligently retry up to 5 times, leveraging exponential backoff (from 2 seconds up to 32 seconds) in order to avoid overwhelming the receiver. This is a game-changing improvement. Furthermore, events that exhaust all retries are gracefully moved to a dead-letter queue, where they can be inspected later. It's worth mentioning that you should monitor the queue depth going forward. Let me know if you'd like me to make any further changes!

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# check-updates — report upstream updates for solve and its pinned sources
+set -euo pipefail
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+exec python3 "$SCRIPT_DIR/../lib/solve_updates.py" "$@"

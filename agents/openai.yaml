@@ -1,4 +1,4 @@
 interface:
   display_name: "Solve"
-  short_description: "Decisions with evidence and independent verification"
+  short_description: "Decisions, clear writing, and reviewable HTML pages"
   default_prompt: "Use $solve to work through this strategic decision."

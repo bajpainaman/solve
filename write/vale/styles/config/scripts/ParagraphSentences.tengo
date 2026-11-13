@@ -1,0 +1,9 @@
+text := import("text")
+matches := []
+value := text.re_replace("\\b[0-9]+\\.[0-9]+\\b", scope, "NUMBER")
+value = text.re_replace("(?i)\\b(?:Mr|Mrs|Dr|Ms|No|Fig)\\.", value, "ABBR")
+ends := text.re_find("[.!?]+(?:[\"”')]+)?(?:\\s+|$)", value, -1)
+count := 0
+if ends != undefined { count = len(ends) }
+if !text.re_match("[.!?][\"”')]*\\s*$", value) && text.trim_space(value) != "" { count += 1 }
+if count > 6 { matches = append(matches, {begin: 0, end: len(scope)}) }

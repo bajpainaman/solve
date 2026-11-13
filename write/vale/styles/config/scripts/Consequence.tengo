@@ -1,0 +1,6 @@
+text := import("text")
+matches := []
+if text.re_match("(?i)^\\s*(?:WARNING|CAUTION)\\b", scope) &&
+   !text.re_match("(?i)\\b(?:risk|injury|injuries|death|damage|burn|burns|shock|fire|explosion|can|could|may|because|result|cause|prevent)\\b", scope) {
+    matches = append(matches, {begin: 0, end: len(scope)})
+}

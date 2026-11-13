@@ -11,6 +11,7 @@ from urllib.parse import quote
 from solve_contract import (ContractError, PROFILES, atomic_write, catalog, completion_valid,
                             decision_digest, evaluate, file_hash, load_run, read_json,
                             read_object, require, run_lock, update_state, write_json)
+import solve_html
 
 
 def link(output, target, label):
@@ -22,7 +23,7 @@ def cell(value):
     return str(value).replace("|", "\\|").replace("\n", " ")
 
 
-def render_report(run, output, slug, fmt="pyramid"):
+def render_report(run, output, slug, fmt="pyramid", html=False):
     require(fmt in ("pyramid", "build-up", "tldr"), "format must be pyramid, build-up, or tldr")
     run, output = Path(run), Path(output).resolve()
     require(output.suffix == ".md", "report output must be a Markdown file")
@@ -88,7 +89,8 @@ def render_report(run, output, slug, fmt="pyramid"):
             elif row["state"] == "BLOCKED":
                 dissent.append(f"{row['gate']}: {row['reason']}. Unverified: {', '.join(row.get('unverified', []))}.")
         dissent.extend(result["failures"])
-        evidence.extend(["", "## Dissent and unverified claims", "", *([f"- {line}" for line in dict.fromkeys(dissent)] or ["No unresolved failure was recorded by the checks before delivery. Consumer verification is recorded separately below."]), ""])
+        dissent = list(dict.fromkeys(dissent))
+        evidence.extend(["", "## Dissent and unverified claims", "", *([f"- {line}" for line in dissent] or ["No unresolved failure was recorded by the checks before delivery. Consumer verification is recorded separately below."]), ""])
         receipts = ["## Gate receipts", "", "| Gate | State | Reason | Receipt |", "|---|---|---|---|"]
         for row in result["gates"]:
             path = run / "gates" / f"{row['gate']}.json"
@@ -110,9 +112,18 @@ def render_report(run, output, slug, fmt="pyramid"):
         blocks = [header, evidence, claim_lines, decision] if fmt == "build-up" else [header, decision, claim_lines, evidence]
         body = "\n".join(line for block in [*blocks, receipts, methods, consumer] for line in block)
         atomic_write(output, body.encode())
-        rendered = {"subject": {"path": str(output), "sha256": file_hash(output)}, "decision_digest": decision_digest(run)}
+        subject = {"path": str(output), "sha256": file_hash(output)}
+        extra = {}
+        if html:
+            # The HTML view joins the subject, so the consumer and completion bind both files.
+            page = output.with_suffix(".html")
+            source = solve_html.write_source(run, output, page, slug, state, claims, result, catalog_by_id, dissent)
+            view, log, skill = solve_html.build(source, page)
+            subject["views"] = [view]
+            extra = {"html": {"source": str(source), "html_artifact": skill, "build_log": log}}
+        rendered = {"subject": subject, "decision_digest": decision_digest(run)}
         write_json(run / "render.json", rendered)
-        return {"output": str(output), "pre_consumer_ready": result["ready"], "verified": False, **rendered}
+        return {"output": str(output), "pre_consumer_ready": result["ready"], "verified": False, **rendered, **extra}
 
 
 def progress(run, plain=False):
@@ -176,9 +187,10 @@ def main(argv=None):
         p.add_argument("--slug", required=True)
         p.add_argument("--format", default="pyramid")
         p.add_argument("--output", required=True)
+        p.add_argument("--html", action="store_true", help="also build a reviewable HTML view with html-artifact")
         parsed = parser.parse_args(args)
         if parsed.command == "render":
-            print(json.dumps(render_report(parsed.run_dir, parsed.output, parsed.slug, parsed.format), indent=2))
+            print(json.dumps(render_report(parsed.run_dir, parsed.output, parsed.slug, parsed.format, parsed.html), indent=2))
         else:
             require(parsed.run_dir and Path(parsed.run_dir).is_dir(), "pass an existing --run-dir")
             require(parsed.width > 0, "--width must be positive")

@@ -442,6 +442,14 @@ def check_subject(subject):
     path = Path(subject["path"])
     require(path.is_absolute() and path.is_file() and path.stat().st_size > 0, "consumer must read the actual report path")
     require(subject.get("sha256") == file_hash(path), "report changed after review")
+    views = subject.get("views", [])
+    require(isinstance(views, list) and all(isinstance(v, dict) and set(v) == {"path", "sha256"} for v in views),
+            "report views must be a list of path and hash objects")
+    for view in views:
+        view_path = Path(str(view["path"]))
+        require(view_path.is_absolute() and view_path.is_file() and view_path.stat().st_size > 0,
+                "consumer must read the actual report view path")
+        require(view["sha256"] == file_hash(view_path), "report view changed after review")
 
 
 def prepare_review(run, role, agent_id, report=None):
@@ -458,8 +466,12 @@ def prepare_review(run, role, agent_id, report=None):
             require(result["ready"], "pre-consumer checks are incomplete or failed; render only an unverified draft")
             require(report is not None, "consumer preparation requires --report")
             subject = {"path": str(Path(report).resolve()), "sha256": file_hash(report)}
-            check_subject(subject)
             rendered = read_object(run / "render.json")
+            # Views built with the report (the HTML page) are part of what the consumer reviews.
+            views = rendered.get("subject", {}).get("views") if isinstance(rendered.get("subject"), dict) else None
+            if views is not None:
+                subject["views"] = views
+            check_subject(subject)
             require(rendered.get("subject") == subject and rendered.get("decision_digest") == decision_digest(run), "report must be rendered from the current decision")
         folder = run / "reviews" / role
         if folder.exists():

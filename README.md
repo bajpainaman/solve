@@ -6,6 +6,31 @@ Strategic decisions with checkable evidence, independent refutation, and explici
 that determine the choice, uses analysis only where needed, and checks the actual
 result before declaring completion.
 
+## Modes
+
+solve routes each request before it does any work.
+
+| Mode | For | Result |
+|---|---|---|
+| decide | Choices with stakes | A gated decision run and a verified decision-memo page |
+| make | Pages people review or use | One of 32 templates: PR reviews, plans, postmortems, explainers, decks, prototypes, editors, blindspot passes |
+| write | Rewrite, audit or lint prose | Built-in simplify-writing (ASD-STE100, Vale and Harper) |
+| answer | Short questions | An inline reply |
+
+The write layer applies to all prose in every mode. See the [router](references/router.md).
+The make-mode exemplars come from [html-effectiveness](https://github.com/ThariqS/html-effectiveness)
+(Apache-2.0). Component pages build with the built-in HTML mode in `html/`. The
+installer fills it with `bin/html-sync`, which fetches
+[html-artifact](https://github.com/aasimsani/html-artifact) at a pinned commit.
+html-artifact has no license file, so this repository never commits that copy.
+
+```bash
+bin/check-updates                   # solve and pinned sources vs upstream
+bin/html-sync                       # once, or after a pin bump
+bin/templates match "write up the outage"
+bin/prose-check --file docs/rfc.md
+```
+
 ## What changed in 2.0
 
 Quick, Standard, and Deep control time, external research spend, and evidence depth.
@@ -32,7 +57,8 @@ establish completion.
 4. Check claims against evidence.
 5. Run a fresh refuter that independently frames the problem before seeing the
    builder's claims and recommendation. It never receives builder rationale.
-6. Render the report and give it to another fresh reviewer.
+6. Render the report, with an optional HTML view, and give it to another fresh
+   reviewer.
 7. The consumer checks the actual report, follows evidence, exercises declared
    surfaces, and identifies material claims missing from the ledger.
 8. Finalize only when current receipts justify completion.
@@ -93,6 +119,7 @@ spelling means external API spend. It does not measure or cap Codex model usage.
 
 ```text
 .context/solve-<slug>.md                 delivered report
+.context/solve-<slug>.html               optional decision-memo page (render --html)
 .context/solve/<slug>/request.md        original request
 .context/solve/<slug>/intake.json       user constraints
 .context/solve/<slug>/claims.json       claims and consumer acceptance conditions
@@ -113,7 +140,17 @@ bin/gates catalog
 bin/gates inspect --run-dir .context/solve/example --gate decision-matrix
 bin/gates validate --run-dir .context/solve/example
 bin/progress --run-dir .context/solve/example --plain
+bin/prose-check --run-dir .context/solve/example --scope claims
+bin/render-report --run-dir .context/solve/example --slug example \
+  --output .context/solve-example.md --html
 ```
+
+Two optional layers improve what the reader gets. They never replace a gate.
+[simplify-writing](https://github.com/bajpainaman/simplify-writing) lints claims
+and the decision before they are hashed. [html-artifact](https://github.com/aasimsani/html-artifact)
+builds a verified decision-memo page, designed after
+[html-effectiveness](https://github.com/ThariqS/html-effectiveness), whose hash
+the consumer and completion receipts bind. See [output](references/output.md).
 
 The full record schema and commands are in [runtime](references/runtime.md).
 Fresh-context briefs and disclosure order are in [roles](references/roles.md).

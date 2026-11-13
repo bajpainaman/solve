@@ -287,7 +287,7 @@ else
   fail "framework count is $FRAMEWORK_COUNT (expected 25)"
   exit 1
 fi
-for required_file in gates/catalog.json lib/solve_contract.py lib/solve_output.py lib/solve_benchmark.py references/runtime.md references/roles.md references/confidence.md benchmarks/cases.jsonl; do
+for required_file in gates/catalog.json lib/solve_contract.py lib/solve_output.py lib/solve_benchmark.py lib/solve_html.py lib/solve_prose.py lib/solve_templates.py lib/solve_bundle.py lib/solve_updates.py sources.json references/runtime.md references/roles.md references/confidence.md references/router.md references/output.md templates/catalog.json write/WRITE.md benchmarks/cases.jsonl; do
   if [ ! -f "$DEST/$required_file" ]; then
     fail "$required_file missing from adaptive verification package"
     exit 1
@@ -307,7 +307,7 @@ for gate in gates.values():
     assert (root / gate["method"]).is_file(), f"missing method: {gate['method']}"
 PY
 ok "adaptive gate catalog and validator load successfully"
-for helper in parallel-research parallel-setup state-rw cost-track render-report budget-track calibration progress statusline tier gates benchmark; do
+for helper in parallel-research parallel-setup state-rw cost-track render-report budget-track calibration progress statusline tier gates benchmark templates prose-check html-sync check-updates; do
   if [ -x "$DEST/bin/$helper" ]; then
     ok "bin/$helper"
   else
@@ -315,6 +315,14 @@ for helper in parallel-research parallel-setup state-rw cost-track render-report
     exit 1
   fi
 done
+
+if [ "${SOLVE_SKIP_HTML_SYNC:-0}" = "1" ]; then
+  warn "html-sync skipped (SOLVE_SKIP_HTML_SYNC=1); run $DEST/bin/html-sync before make mode"
+elif "$DEST/bin/html-sync"; then
+  ok "built-in HTML mode ready at $DEST/html"
+else
+  warn "html-sync failed; make mode falls back to self-contained pages until $DEST/bin/html-sync succeeds"
+fi
 
 step "6/6 project routing check"
 if [ -f "$PWD/AGENTS.md" ] && grep -q '\$solve\|Strategic decisions.*solve' "$PWD/AGENTS.md" 2>/dev/null; then

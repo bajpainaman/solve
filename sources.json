@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {"id": "solve", "mode": "self", "repo": "https://github.com/bajpainaman/solve.git", "branch": "main", "path": "."},
+    {"id": "html-artifact", "mode": "fetched", "repo": "https://github.com/aasimsani/html-artifact.git", "ref": "85df82046aa9527de63a350e5d1c76179a3bccad", "path": "html"},
+    {"id": "html-effectiveness", "mode": "vendored", "repo": "https://github.com/ThariqS/html-effectiveness.git", "ref": "1787245d94aa680edf18b52027e3f859032776ba", "path": "templates/html-effectiveness"},
+    {"id": "simplify-writing", "mode": "vendored", "repo": "https://github.com/bajpainaman/simplify-writing.git", "ref": "354702468dcbc36a6bbec102de5c42b5dc6148e5", "path": "write"}
+  ]
+}

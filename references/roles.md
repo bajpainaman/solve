@@ -102,12 +102,16 @@ Give it this brief and the manifest:
 > results. If a claim concerns a page, query its reader or serving interface;
 > filesystem deletion is insufficient. For a forecast, check its assumptions,
 > uncertainty label, and follow-up condition rather than asserting future truth.
+> If the subject lists views, open each one too. A view must state the same
+> recommendation, next action, claims, failures and uncertainty as the report.
+> Record any disagreement as incomplete coverage with the view path as reason.
 > Save observations under reviews/consumer/evidence/ and return a consumer gate
-> receipt. Do not edit the report. An inaccessible surface leaves work BLOCKED.
+> receipt. Do not edit the report or its views. An inaccessible surface leaves
+> work BLOCKED.
 
 The consumer receipt includes review.agent_id, the hashed consumer manifest, the
 same coverage object as refutation, and subject copied exactly from the manifest
-(actual absolute report path and hash). Each check's surface and expected result
+(actual absolute report path and hash, plus any views). Each check's surface and expected result
 must match its claim's acceptance condition. Evidence contains actual observations,
 not statements that the evidence file exists.
 
