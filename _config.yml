@@ -1,5 +1,5 @@
 title: solve
-description: Strategic decisions with adaptive analysis, checkable evidence, and independent verification.
+description: One skill for decisions, clear writing, and reviewable HTML pages.
 theme: jekyll-theme-cayman
 url: https://bajpainaman.github.io
 baseurl: /solve
@@ -12,11 +12,14 @@ plugins:
 include:
   - frameworks
   - bin
+  - templates
 
 exclude:
   - node_modules
   - install
   - solve
+  - html
+  - write/vale
   - "*.bak"
   - .DS_Store
 
