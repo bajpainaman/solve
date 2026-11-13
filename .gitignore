@@ -5,3 +5,17 @@
 node_modules/
 __pycache__/
 *.pyc
+# Third-party Vale packages for write/. `vale sync` downloads the pinned versions.
+write/vale/styles/Google/
+write/vale/styles/Readability/
+write/vale/styles/Microsoft/
+write/vale/styles/proselint/
+write/vale/styles/ai-tells/
+write/vale/styles/config/templates/
+write/vale/styles/.vale-config/
+write/vale/styles/.ste-writing-packages.json
+write/vale/private/
+# html-artifact has no license file. bin/html-sync fetches it locally; never commit it.
+/html/
+/html.new/
+/html.old/

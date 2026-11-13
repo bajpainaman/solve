@@ -1,0 +1,16 @@
+extends: existence
+message: "'%s' is a lead-in, closer or filler. State the fact, topic or result directly, and end when the content ends."
+level: suggestion
+scope: ~code
+ignorecase: true
+tokens:
+  - it(?:'s| is) important to note
+  - it(?:'s| is) worth (?:mentioning|noting)
+  - in today's rapidly evolving
+  - when it comes to
+  - at its core
+  - as we have seen
+  - in conclusion
+  - in order to
+  - at the end of the day
+  - let me know if

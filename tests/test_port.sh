@@ -68,6 +68,7 @@ CODEX_BIN=codex \
 SOLVE_SKILL_DEST="$TEST_TMP/home/.agents/skills/solve" \
 SOLVE_SHIM_DIR="$TEST_TMP/bin" \
 SOLVE_INSTALL_NONINTERACTIVE=1 \
+SOLVE_SKIP_HTML_SYNC=1 \
   "$ROOT/install" > "$TEST_TMP/install.log"
 
 [ -L "$TEST_TMP/home/.agents/skills/solve" ] || fail "installer did not create the Codex skill symlink"
@@ -82,6 +83,7 @@ CODEX_BIN=codex \
 SOLVE_SKILL_DEST="$TEST_TMP/home/.agents/skills/solve" \
 SOLVE_SHIM_DIR="$TEST_TMP/bin" \
 SOLVE_INSTALL_NONINTERACTIVE=1 \
+SOLVE_SKIP_HTML_SYNC=1 \
   "$ROOT/install" > "$TEST_TMP/install-second.log"
 if compgen -G "$TEST_TMP/home/.agents/skills/solve.bak.*" >/dev/null; then
   fail "idempotent install created an unnecessary skill backup"
@@ -106,7 +108,7 @@ HOME="$TEST_TMP/home" \
 PATH="$TEST_TMP/bin:$PATH" \
 CODEX_BIN=codex \
   "$TEST_TMP/bin/solve" --status > "$TEST_TMP/status.log"
-grep -Fq "skill version:    2.0.0" "$TEST_TMP/status.log" || fail "status omitted skill version"
+grep -Fq "skill version:    2.1.0" "$TEST_TMP/status.log" || fail "status omitted skill version"
 grep -Fq "subagents:        enabled" "$TEST_TMP/status.log" || fail "status did not detect subagents"
 
 REAL_CODEX=$(command -v codex 2>/dev/null || true)
@@ -114,7 +116,7 @@ if [ -n "$REAL_CODEX" ] && [ "$REAL_CODEX" != "$TEST_TMP/bin/codex" ]; then
   env -u CODEX_HOME HOME="$TEST_TMP/home" \
     "$REAL_CODEX" debug prompt-input '$solve discovery smoke test' \
     > "$TEST_TMP/prompt-input.json" 2>/dev/null
-  grep -Fq -- '- solve: Strategic decisions with adaptive analysis' "$TEST_TMP/prompt-input.json" || fail "real Codex did not discover the installed skill"
+  grep -Fq -- '- solve: One skill for decisions, clear writing and reviewable HTML pages' "$TEST_TMP/prompt-input.json" || fail "real Codex did not discover the installed skill"
 grep -Fq -- '$solve discovery smoke test' "$TEST_TMP/prompt-input.json" || fail "real Codex did not retain the explicit invocation"
 fi
 
@@ -128,6 +130,7 @@ PATH="$TEST_TMP/bin:$PATH" \
 CODEX_BIN=codex \
 SOLVE_INSTALL_MODE=copy \
 SOLVE_INSTALL_NONINTERACTIVE=1 \
+SOLVE_SKIP_HTML_SYNC=1 \
   "$ROOT/install" > "$TEST_TMP/install-copy.log"
 [ -d "$COPY_HOME/.agents/skills/solve" ] || fail "copy-mode skill directory missing"
 [ ! -L "$COPY_HOME/.agents/skills/solve" ] || fail "copy mode created a symlink"
@@ -157,6 +160,7 @@ if HOME="$DISABLED_HOME" \
    PATH="$TEST_TMP/bin:$PATH" \
    CODEX_BIN=codex \
    SOLVE_INSTALL_NONINTERACTIVE=1 \
+   SOLVE_SKIP_HTML_SYNC=1 \
    "$ROOT/install" > "$TEST_TMP/install-disabled.log" 2>&1; then
   fail "installer ignored agents.enabled=false"
 fi
@@ -196,7 +200,7 @@ assert sum((root / name).stat().st_size for name in bootstrap) < 40000, "bootstr
 metadata = (root / "agents/openai.yaml").read_text()
 assert 'display_name: "Solve"' in metadata
 assert 'default_prompt: "Use $solve ' in metadata
-assert (root / "VERSION").read_text().strip() == "2.0.0"
+assert (root / "VERSION").read_text().strip() == "2.1.0"
 PY_TEST
 
 RUN_DIR="$TEST_TMP/run"

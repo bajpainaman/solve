@@ -7,6 +7,20 @@ All notable changes to `solve` are documented here. The format follows [Keep a C
 ### Pending
 - Measure baseline and candidate model runs on the published synthetic evaluation corpus.
 
+## [2.1.0] — 2026-11-13
+
+### Changed
+- solve is one skill with four modes: decide, make, write and answer. A router in SKILL.md and `references/router.md` picks the mode, then Markdown or HTML, then the template. Decision runs are unchanged and still need every gate.
+
+### Added
+- Make mode: all 31 html-effectiveness pages under `templates/html-effectiveness/` (Apache-2.0), cataloged in `templates/catalog.json` with trigger phrases, shapes and renderers. `bin/templates list|show|match` picks one. Component pages build with html-artifact; without it they fall back to a self-contained page modeled on the exemplar.
+- HTML mode: html-artifact is built in under `html/`. `bin/html-sync` fetches it at a pinned commit, the installer runs it, and solve uses it before any installed plugin. html-artifact has no license file, so `.gitignore` keeps `html/` out of the repository.
+- `bin/check-updates` compares solve and each pinned source in `sources.json` with its upstream and prints the action for each update. The skill runs it once per session from a one-day cache. It reports and never applies; a failed lookup shows as UNKNOWN.
+- Write mode: simplify-writing is built in under `write/` (MIT) and applies to all prose the skill writes. `bin/prose-check --file` lints any Markdown, text or HTML file, and syncs the pinned Vale packages on first use.
+- `render-report --html` builds a decision-memo page with html-artifact and runs its headless verify pass. The page hash joins the render subject as `views`, so the consumer and completion receipts bind it. An edit to the page invalidates completion.
+- `bin/prose-check` lints claims, the recommendation, the next action and the TL;DR with simplify-writing's Vale and Harper rules before that text enters a digest. Findings are advisory and stored under `prose/`.
+- `references/output.md` documents both layers and the page spine, which follows html-effectiveness: answer first, unknowns visible, detail on demand.
+
 ## [2.0.0] — 2026-09-07
 
 ### Changed

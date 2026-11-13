@@ -1,0 +1,13 @@
+# Original advisory check based on Williams/Bizup, Actions, pages 28 to 45.
+extends: substitution
+message: "Consider '%s' for '%s' if the action and meaning stay the same. Williams/Bizup, Actions, pages 28 to 45."
+level: suggestion
+scope: sentence
+ignorecase: true
+swap:
+  make a decision: decide
+  conduct an analysis: analyze
+  perform an evaluation: evaluate
+  give consideration to: consider
+  make an attempt to: try
+  carry out an investigation of: investigate
