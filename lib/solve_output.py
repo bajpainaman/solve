@@ -12,6 +12,7 @@ from solve_contract import (ContractError, PROFILES, atomic_write, catalog, comp
                             decision_digest, evaluate, file_hash, load_run, read_json,
                             read_object, require, run_lock, update_state, write_json)
 import solve_html
+import solve_portable
 
 
 def link(output, target, label):
@@ -23,8 +24,9 @@ def cell(value):
     return str(value).replace("|", "\\|").replace("\n", " ")
 
 
-def render_report(run, output, slug, fmt="pyramid", html=False):
+def render_report(run, output, slug, fmt="pyramid", html=False, portable_html=False):
     require(fmt in ("pyramid", "build-up", "tldr"), "format must be pyramid, build-up, or tldr")
+    require(not (html and portable_html), "choose --html or --portable-html, not both")
     run, output = Path(run), Path(output).resolve()
     require(output.suffix == ".md", "report output must be a Markdown file")
     require(run.resolve() not in output.parents or output == run.resolve() / "report.md",
@@ -121,6 +123,11 @@ def render_report(run, output, slug, fmt="pyramid", html=False):
             view, log, skill = solve_html.build(source, page)
             subject["views"] = [view]
             extra = {"html": {"source": str(source), "html_artifact": skill, "build_log": log}}
+        elif portable_html:
+            page = solve_portable.build_decision(run, output.with_suffix(".html"), slug, state, claims, result, catalog_by_id, dissent)
+            subject["views"] = [{"path": page["path"], "sha256": page["sha256"]}]
+            extra = {"html": {"source": page["source"], "renderer": "solve-portable", "static": page["static"],
+                              "browser": page["browser"], "verified_decision": False}}
         rendered = {"subject": subject, "decision_digest": decision_digest(run)}
         write_json(run / "render.json", rendered)
         return {"output": str(output), "pre_consumer_ready": result["ready"], "verified": False, **rendered, **extra}
@@ -187,10 +194,12 @@ def main(argv=None):
         p.add_argument("--slug", required=True)
         p.add_argument("--format", default="pyramid")
         p.add_argument("--output", required=True)
-        p.add_argument("--html", action="store_true", help="also build a reviewable HTML view with html-artifact")
+        html_choice = p.add_mutually_exclusive_group()
+        html_choice.add_argument("--html", action="store_true", help="also build a reviewable HTML view with html-artifact")
+        html_choice.add_argument("--portable-html", action="store_true", help="build original offline HTML with embedded evidence; browser/consumer checks remain separate")
         parsed = parser.parse_args(args)
         if parsed.command == "render":
-            print(json.dumps(render_report(parsed.run_dir, parsed.output, parsed.slug, parsed.format, parsed.html), indent=2))
+            print(json.dumps(render_report(parsed.run_dir, parsed.output, parsed.slug, parsed.format, parsed.html, parsed.portable_html), indent=2))
         else:
             require(parsed.run_dir and Path(parsed.run_dir).is_dir(), "pass an existing --run-dir")
             require(parsed.width > 0, "--width must be positive")

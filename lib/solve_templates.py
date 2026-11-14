@@ -38,8 +38,10 @@ def html_artifact_dir():
         return None
 
 
-def effective_renderer(template, artifact_dir):
+def effective_renderer(template, artifact_dir, portable=False):
     """Without html-artifact, component pages fall back to their exemplar."""
+    if portable and template["renderer"] == "artifact":
+        return "portable"
     if template["renderer"] == "artifact" and artifact_dir is None:
         return "bespoke"
     return template["renderer"]
@@ -62,18 +64,24 @@ def match(request, templates, limit=MATCH_LIMIT):
     return scored[:limit]
 
 
-def describe(template, data, artifact_dir):
-    renderer = effective_renderer(template, artifact_dir)
+def describe(template, data, artifact_dir, portable=False):
+    renderer = effective_renderer(template, artifact_dir, portable)
     lines = [f"{template['id']}: {template['title']} ({template['family']})",
              f"  shape:    {template['shape']}",
-             f"  renderer: {renderer}" + (" (HTML mode missing: run bin/html-sync)" if renderer != template["renderer"] else "")]
+             f"  renderer: {renderer}" + (" (HTML mode missing: run bin/html-sync)" if not portable and renderer != template["renderer"] else "")]
     if template["file"]:
         lines.append(f"  exemplar: {ROOT / 'templates' / template['file']}")
     if template.get("artifact_type") and artifact_dir:
         lines.append(f"  type:     {artifact_dir / 'references/types' / (template['artifact_type'] + '.md')}")
-    if template.get("components"):
+    if template.get("components") and not portable:
         lines.append(f"  components: {', '.join(template['components'])}")
-    lines.append(f"  how:      {data['renderers'][renderer]}")
+    if portable:
+        how = {"portable": "bin/artifact build INPUT.json --output OUTPUT.html; use the exemplar for structure only",
+               "bespoke": "author a self-contained interactive page; use the host browser workflow to check its layout and controls",
+               "solve": "bin/render-report --portable-html; then independent consumer review and gates finalize"}[renderer]
+    else:
+        how = data["renderers"][renderer]
+    lines.append(f"  how:      {how}")
     return "\n".join(lines)
 
 
@@ -82,32 +90,35 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("list")
     p.add_argument("--family")
+    p.add_argument("--portable", action="store_true")
     p = sub.add_parser("show")
     p.add_argument("id")
+    p.add_argument("--portable", action="store_true")
     p = sub.add_parser("match")
     p.add_argument("request", help="the request text, quoted")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--portable", action="store_true")
     args = parser.parse_args(argv)
     try:
         data = load()
         templates = data["templates"]
-        artifact_dir = html_artifact_dir()
+        artifact_dir = None if args.portable else html_artifact_dir()
         if args.command == "list":
             for t in templates:
                 if not args.family or t["family"] == args.family:
-                    print(f"{t['family']:<12} {t['id']:<22} {effective_renderer(t, artifact_dir):<9} {t['title']}")
+                    print(f"{t['family']:<12} {t['id']:<22} {effective_renderer(t, artifact_dir, args.portable):<9} {t['title']}")
         elif args.command == "show":
             found = [t for t in templates if t["id"] == args.id]
             require(found, f"unknown template: {args.id}. Run `bin/templates list`")
-            print(describe(found[0], data, artifact_dir))
+            print(describe(found[0], data, artifact_dir, args.portable))
         else:
             hits = match(args.request, templates)
             if args.json:
-                print(json.dumps([{"score": s, "id": t["id"], "renderer": effective_renderer(t, artifact_dir)} for s, t in hits]))
+                print(json.dumps([{"score": s, "id": t["id"], "renderer": effective_renderer(t, artifact_dir, args.portable)} for s, t in hits]))
             elif not hits:
                 print("No template matches. Use markdown, or pick one from `bin/templates list`.")
             else:
-                print("\n\n".join(f"[score {s}] " + describe(t, data, artifact_dir) for s, t in hits))
+                print("\n\n".join(f"[score {s}] " + describe(t, data, artifact_dir, args.portable) for s, t in hits))
         return 0
     except (ContractError, OSError, KeyError, ValueError) as exc:
         print(f"BLOCKED: {exc}", file=sys.stderr)

@@ -2,6 +2,10 @@
 
 One skill for decisions, clear writing, and reviewable HTML pages.
 
+**Plugin:** [Build and use the portable Solve plugin](docs/plugin.md). It bundles
+the decision runtime, writing rules, and a self-contained HTML renderer, with a
+small router that loads one workflow at a time. The existing CLI remains available.
+
 `solve` routes each request before it does any work. A decision gets checked
 claims, a blind refuter, and a consumer review. A page gets one of 32 templates
 and a headless-browser check. All prose follows controlled English. Run it as

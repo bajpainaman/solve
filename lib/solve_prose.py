@@ -4,6 +4,8 @@ Run it before the text is hashed. Claim statements enter every gate's input
 digest, and the recommendation and next action enter the refutation digest, so
 rewording them after those receipts exist requires the checks to run again.
 The lint is advisory: it reports findings and never edits the run.
+Use --offline for a read-only skill bundle: only installed engines and packages
+are used; missing Vale packages are reported instead of downloaded.
 """
 
 import argparse
@@ -23,6 +25,7 @@ SIMPLIFY_WRITING_ENV = "SOLVE_SIMPLIFY_WRITING"
 BUILT_IN = Path(__file__).resolve().parents[1] / "write"
 # Pinned third-party Vale packages that `vale sync` downloads once.
 SYNCED_STYLE = Path("vale/styles/Google")
+PINNED_STYLES = ("Google", "Readability", "Microsoft", "proselint", "ai-tells")
 SKILL_DIRS = (Path.home() / ".claude/skills/simplify-writing", Path.home() / ".agents/skills/simplify-writing")
 PLUGIN_CACHE = Path.home() / ".claude/plugins/cache/simplify-writing"
 LINT_TIMEOUT_SECONDS = 120
@@ -107,19 +110,25 @@ def prose_text(path):
     return re.sub(r"[ \t]+", " ", re.sub(r"<[^>]+>", " ", text))
 
 
-def lint(path, skill, profile, labels=None):
+def lint(path, skill, profile, labels=None, *, offline=False):
     labels = labels or {}
     result = {"file": str(path), "profile": profile, "findings": [], "skipped": []}
     if shutil.which("vale"):
-        ensure_synced(skill, profile)
-        raw = _run(["vale", "--no-global", f"--config={skill / 'vale' / (profile + '.ini')}", "--output=JSON", str(path)])
-        for alerts in (json.loads(raw) if raw.strip() else {}).values():
-            for alert in alerts:
-                result["findings"].append({"tool": "vale", "check": alert["Check"], "severity": alert["Severity"],
-                                           "line": alert["Line"],
-                                           # Readability scores the whole file, so it has no field.
-                                           "field": None if alert["Check"].startswith("Readability.") else labels.get(alert["Line"]),
-                                           "match": alert.get("Match", ""), "message": alert["Message"]})
+        missing = [name for name in PINNED_STYLES if not (skill / "vale/styles" / name).is_dir()] if offline else []
+        if missing:
+            result["skipped"].append("vale packages are missing: " + ", ".join(missing) +
+                                     "; offline mode did not download them")
+        else:
+            if not offline:
+                ensure_synced(skill, profile)
+            raw = _run(["vale", "--no-global", f"--config={skill / 'vale' / (profile + '.ini')}", "--output=JSON", str(path)])
+            for alerts in (json.loads(raw) if raw.strip() else {}).values():
+                for alert in alerts:
+                    result["findings"].append({"tool": "vale", "check": alert["Check"], "severity": alert["Severity"],
+                                               "line": alert["Line"],
+                                               # Readability scores the whole file, so it has no field.
+                                               "field": None if alert["Check"].startswith("Readability.") else labels.get(alert["Line"]),
+                                               "match": alert.get("Match", ""), "message": alert["Message"]})
     else:
         result["skipped"].append("vale is not installed (brew install vale)")
     if shutil.which("harper-cli"):
@@ -161,13 +170,15 @@ def main(argv=None):
                         help="claims before gate inspection; decision before the refuter reveal")
     parser.add_argument("--report", help="lint a rendered report instead (advisory only; edits need a new review)")
     parser.add_argument("--profile", choices=PROFILES, default="description")
+    parser.add_argument("--offline", action="store_true",
+                        help="use installed linters and packages only; never sync or download Vale styles")
     args = parser.parse_args(argv)
     try:
         require(bool(args.run_dir) != bool(args.file), "pass exactly one of --run-dir or --file")
         if args.file:
             target = Path(args.file)
             require(target.is_file(), f"no such file: {args.file}")
-            result = lint(target.resolve(), locate_simplify_writing(), args.profile)
+            result = lint(target.resolve(), locate_simplify_writing(), args.profile, offline=args.offline)
             _print(result, args.file)
             return 0
         run = Path(args.run_dir)
@@ -178,13 +189,13 @@ def main(argv=None):
         if args.report:
             report = Path(args.report)
             require(report.is_file() and report.suffix == ".md", "--report must be a rendered Markdown report")
-            result = lint(report.resolve(), skill, args.profile)
+            result = lint(report.resolve(), skill, args.profile, offline=args.offline)
             name = "report"
         else:
             text, labels = extract(run, args.scope)
             source = out_dir / f"{args.scope}.md"
             source.write_text(text, encoding="utf-8")
-            result = lint(source.resolve(), skill, args.profile, labels)
+            result = lint(source.resolve(), skill, args.profile, labels, offline=args.offline)
             name = args.scope
         write_json(out_dir / f"{name}-lint.json", result)
         _print(result, f"{name} -> {out_dir / (name + '-lint.json')}")

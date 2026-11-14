@@ -96,6 +96,65 @@ class ProseTextTests(unittest.TestCase):
             self.assertIsNone(solve_prose.prose_text(doc))
 
 
+class OfflineProseTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="solve-prose-offline-")
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.skill = self.root / "skill"
+        self.skill.mkdir()
+        self.doc = self.root / "note.md"
+        self.doc.write_text("The service may return 429 after 3 attempts.\n\n```sh\ncurl '$URL'\n```\n")
+
+    def test_missing_packages_skip_vale_without_sync_but_run_harper(self):
+        before = self.doc.read_bytes()
+        with patch.object(solve_prose.shutil, "which", side_effect=lambda name: "/bin/" + name), \
+                patch.object(solve_prose, "ensure_synced") as sync, \
+                patch.object(solve_prose, "_run", return_value="") as run:
+            result = solve_prose.lint(self.doc, self.skill, "description", offline=True)
+        sync.assert_not_called()
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][0], "harper-cli")
+        self.assertEqual(len(result["skipped"]), 1)
+        self.assertIn("offline mode did not download", result["skipped"][0])
+        self.assertEqual(list(self.skill.rglob("*")), [])
+        self.assertEqual(self.doc.read_bytes(), before)
+
+    def test_a_partial_package_install_does_not_count_as_ready(self):
+        (self.skill / solve_prose.SYNCED_STYLE).mkdir(parents=True)
+        with patch.object(solve_prose.shutil, "which", return_value="/bin/vale"), \
+                patch.object(solve_prose, "ensure_synced") as sync, \
+                patch.object(solve_prose, "_run", return_value="") as run:
+            result = solve_prose.lint(self.doc, self.skill, "description", offline=True)
+        sync.assert_not_called()
+        self.assertNotIn("Google", result["skipped"][0])
+        self.assertIn("Readability", result["skipped"][0])
+        self.assertFalse(any(call.args[0][0] == "vale" for call in run.call_args_list))
+
+    def test_preinstalled_packages_allow_vale_without_sync(self):
+        for name in solve_prose.PINNED_STYLES:
+            (self.skill / "vale/styles" / name).mkdir(parents=True)
+        alerts = {str(self.doc): [{"Check": "Google.We", "Severity": "suggestion", "Line": 1,
+                                  "Message": "Review the actor.", "Match": "we"}]}
+        with patch.object(solve_prose.shutil, "which", side_effect=lambda name: "/bin/vale" if name == "vale" else None), \
+                patch.object(solve_prose, "ensure_synced") as sync, \
+                patch.object(solve_prose, "_run", return_value=json.dumps(alerts)) as run:
+            result = solve_prose.lint(self.doc, self.skill, "description", offline=True)
+        sync.assert_not_called()
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][0], "vale")
+        self.assertEqual(result["findings"][0]["check"], "Google.We")
+        self.assertEqual(result["skipped"], ["harper-cli is not installed (brew install harper)"])
+
+    def test_default_mode_retains_sync_behavior(self):
+        with patch.object(solve_prose.shutil, "which", side_effect=lambda name: "/bin/vale" if name == "vale" else None), \
+                patch.object(solve_prose, "ensure_synced") as sync, \
+                patch.object(solve_prose, "_run", return_value="{}") as run:
+            solve_prose.lint(self.doc, self.skill, "description")
+        sync.assert_called_once_with(self.skill, "description")
+        self.assertEqual(run.call_args.args[0][0], "vale")
+
+
 class ProseCliTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="solve-prose-cli-")
@@ -115,6 +174,25 @@ class ProseCliTests(unittest.TestCase):
             self.assertEqual(solve_prose.main(["--file", str(doc)]), 0)
         self.assertEqual(lint.call_args.args[0], doc.resolve())
         self.assertFalse((self.f.run / "prose").exists())
+
+    def test_offline_flag_reaches_all_lint_modes_without_changing_inputs(self):
+        doc = self.f.root / "note.md"
+        doc.write_text("The cache must retain 12 records and may retry once.\n")
+        fake = {"file": str(doc), "profile": "description", "findings": [], "skipped": [], "counts": {}}
+        before = c.decision_digest(self.f.run)
+        modes = [
+            ["--file", str(doc)],
+            ["--run-dir", str(self.f.run), "--scope", "claims"],
+            ["--run-dir", str(self.f.run), "--report", str(doc)],
+        ]
+        for args in modes:
+            with self.subTest(args=args), \
+                    patch.object(solve_prose, "locate_simplify_writing", return_value=self.f.root), \
+                    patch.object(solve_prose, "lint", return_value=fake) as lint:
+                self.assertEqual(solve_prose.main([*args, "--offline"]), 0)
+                self.assertTrue(lint.call_args.kwargs["offline"])
+        self.assertEqual(c.decision_digest(self.f.run), before)
+        self.assertEqual(doc.read_text(), "The cache must retain 12 records and may retry once.\n")
 
     def test_missing_run_dir_blocks(self):
         self.assertEqual(solve_prose.main(["--run-dir", str(self.f.root / "absent")]), 2)

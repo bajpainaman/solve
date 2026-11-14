@@ -112,7 +112,9 @@ grep -Fq "skill version:    2.1.0" "$TEST_TMP/status.log" || fail "status omitte
 grep -Fq "subagents:        enabled" "$TEST_TMP/status.log" || fail "status did not detect subagents"
 
 REAL_CODEX=$(command -v codex 2>/dev/null || true)
-if [ -n "$REAL_CODEX" ] && [ "$REAL_CODEX" != "$TEST_TMP/bin/codex" ]; then
+if [ "${SOLVE_SKIP_LIVE_CODEX_TEST:-0}" = "1" ]; then
+  printf 'SKIPPED: live Codex discovery (SOLVE_SKIP_LIVE_CODEX_TEST=1); isolated launcher checks still run\n'
+elif [ -n "$REAL_CODEX" ] && [ "$REAL_CODEX" != "$TEST_TMP/bin/codex" ]; then
   env -u CODEX_HOME HOME="$TEST_TMP/home" \
     "$REAL_CODEX" debug prompt-input '$solve discovery smoke test' \
     > "$TEST_TMP/prompt-input.json" 2>/dev/null
