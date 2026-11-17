@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# cdpi: route, search and cite CDPI's DPI knowledge. Python 3 standard library only.
+set -euo pipefail
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+exec python3 -I "$SCRIPT_DIR/../lib/cdpi.py" "$@"

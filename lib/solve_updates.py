@@ -78,10 +78,11 @@ def check_source(source, root=ROOT):
         source_file = root / source["path"] / "SOURCE"
         fields = dict(l.split("=", 1) for l in source_file.read_text().splitlines() if "=" in l) if source_file.is_file() else {}
         if fields.get("ref") != pin:
-            result["local"] = f"{source['path']}/ does not match the pin; run bin/html-sync"
+            result["local"] = f"{source['path']}/ does not match the pin; run {source.get('sync', 'bin/html-sync')}"
     if head == pin:
         return {**result, "status": "current", "ref": pin}
-    action = (f"review the diff, set its ref in sources.json, then run bin/html-sync" if source["mode"] == "fetched"
+    action = (f"review the diff, set its ref in sources.json, then run {source.get('sync', 'bin/html-sync')}"
+              if source["mode"] == "fetched" or source.get("sync")
               else f"review the diff, copy the changes into {source['path']}/, then set its ref in sources.json")
     return {**result, "status": "update", "ref": pin, "latest": head, "action": action,
             "compare": _compare_url(source["repo"], pin, head)}

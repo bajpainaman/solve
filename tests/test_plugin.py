@@ -31,13 +31,16 @@ class PluginPackageTests(unittest.TestCase):
         result = plugin.inspect_archive(archive)
         self.assertEqual(result["gates"], 28)
         self.assertEqual(result["templates"], 32)
-        self.assertEqual(result["skills"], ["solve"])
+        self.assertEqual(result["skills"], ["solve", "cdpi", "impeccable"])
+        self.assertIn("ROUTING.md", self.entries)
         self.assertLess(result["entry_words"], 700)
         with zipfile.ZipFile(io.BytesIO(archive)) as opened:
             for executable in ("gates", "artifact", "prose-check", "render-report", "benchmark"):
                 info = opened.getinfo("solve/skills/solve/bin/" + executable)
                 self.assertTrue((info.external_attr >> 16) & stat.S_IXUSR)
             self.assertIn("solve/skills/solve/benchmarks/cases.jsonl", opened.namelist())
+            for executable in ("skills/cdpi/bin/cdpi", "skills/impeccable/scripts/impeccable"):
+                self.assertTrue((opened.getinfo("solve/" + executable).external_attr >> 16) & stat.S_IXUSR)
             self.assertFalse(any("/html/" in n or "/.git/" in n or "/.context/" in n for n in opened.namelist()))
 
     def test_same_source_produces_identical_archive_bytes(self):
@@ -50,7 +53,8 @@ class PluginPackageTests(unittest.TestCase):
             plugin.validate(entries)
 
     def test_instruction_links_and_licenses_are_required(self):
-        for name in ("skills/solve/references/decision.md", "skills/solve/write/LICENSE"):
+        for name in ("skills/solve/references/decision.md", "skills/solve/write/LICENSE",
+                     "ROUTING.md", "skills/impeccable/LICENSE"):
             entries = dict(self.entries)
             del entries[name]
             with self.subTest(name=name), self.assertRaisesRegex(plugin.PackageError, "missing component"):
@@ -88,6 +92,17 @@ class PluginPackageTests(unittest.TestCase):
             alias.symlink_to(target)
             with self.assertRaisesRegex(plugin.PackageError, "symlink"):
                 plugin.read_file(alias)
+
+
+    def test_committed_skills_tree_matches_the_package(self):
+        """skills/solve is what `npx skills add` installs; it must equal the plugin's copy."""
+        tree = plugin.ROOT / "skills/solve"
+        on_disk = {"skills/solve/" + p.relative_to(tree).as_posix(): p.read_bytes()
+                   for p in tree.rglob("*") if p.is_file() and "__pycache__" not in p.parts}
+        packaged = {n: b for n, b in self.entries.items() if n.startswith("skills/solve/")}
+        self.assertEqual(sorted(on_disk), sorted(packaged), "run bin/build-plugin --tree")
+        for name, data in packaged.items():
+            self.assertEqual(on_disk[name], data, f"{name} is stale; run bin/build-plugin --tree")
 
 
 if __name__ == "__main__":

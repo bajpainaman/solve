@@ -14,6 +14,8 @@ Pick the first row that matches.
 | pitches an unvalidated product idea | **route** | office-hours when available. Do not start a decision run |
 | asks to rewrite, simplify, de-slop, audit or lint prose | **write** | [write/WRITE.md](../write/WRITE.md) |
 | asks for a page, report, review, plan, explainer, deck, prototype or small tool | **make** | Steps 2 and 3 below, then the template's renderer |
+| asks how software should be built: architecture, protocol, API, schema, PR review, monolith split, rewrite vs extend | **cdpi** | [skills/cdpi/SKILL.md](../skills/cdpi/SKILL.md), via `skills/cdpi/bin/cdpi route` |
+| asks to design, critique, polish or animate a frontend interface | **impeccable** | [skills/impeccable/SKILL.md](../skills/impeccable/SKILL.md) |
 | asks a question with a short factual answer | **answer** | Reply inline. Use the write layer |
 
 Signals that move a request between modes:

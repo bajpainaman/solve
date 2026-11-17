@@ -1,0 +1,1 @@
+# Generated project terms. Edit vale/glossary.json and rebuild.

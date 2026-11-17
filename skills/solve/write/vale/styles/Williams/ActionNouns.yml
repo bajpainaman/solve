@@ -1,0 +1,15 @@
+# Original advisory check based on Williams/Bizup, Actions, pages 28 to 45.
+extends: existence
+message: "Review '%s': can a verb make the action clearer? Keep necessary technical nouns. Williams/Bizup, Actions, pages 28 to 45."
+level: suggestion
+scope: sentence
+ignorecase: true
+tokens:
+  - implementation
+  - determination
+  - evaluation
+  - investigation
+  - consideration
+  - assessment
+  - recommendation
+  - authorization

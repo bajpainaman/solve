@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {"id": "solve", "mode": "self", "repo": "https://github.com/bajpainaman/solve.git", "branch": "main", "path": "."},
+    {"id": "html-artifact", "mode": "fetched", "repo": "https://github.com/aasimsani/html-artifact.git", "ref": "85df82046aa9527de63a350e5d1c76179a3bccad", "path": "html", "sync": "bin/html-sync"},
+    {"id": "html-effectiveness", "mode": "vendored", "repo": "https://github.com/ThariqS/html-effectiveness.git", "ref": "1787245d94aa680edf18b52027e3f859032776ba", "path": "templates/html-effectiveness"},
+    {"id": "simplify-writing", "mode": "vendored", "repo": "https://github.com/bajpainaman/simplify-writing.git", "ref": "354702468dcbc36a6bbec102de5c42b5dc6148e5", "path": "write"},
+    {"id": "cdpi", "mode": "vendored", "repo": "https://github.com/bajpainaman/cdpi.git", "ref": "dcb9fcff0f5fcb14083f6606ed165ea020f8162f", "path": "skills/cdpi"},
+    {"id": "impeccable", "mode": "vendored", "repo": "https://github.com/pbakaus/impeccable.git", "ref": "d41d9860b0094dcb68030657da63461212835aaa", "path": "skills/impeccable", "sync": "bin/impeccable-sync"}
+  ]
+}

@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+# calibration — confidence-bucket calibration ledger + drift audit
+#
+# Subcommands:
+#   log <slug> <run_id> <bucket> <rubric> <posterior> <recommendation>
+#                                 append a row with outcome=TBD
+#   log-outcome <slug> <outcome>  update most-recent TBD row for slug
+#                                 outcomes: success | mixed | failure | aborted | stale_no_followup
+#   status                        print summary: total runs, bucket counts, success rate, current threshold
+#   audit                         compute HIGH-bucket success rate; if < threshold, raise rubric requirement
+#   reset                         revert thresholds to defaults (rubric ≥ 8 for HIGH)
+#   detect-shipped <slug>         scan git log for evidence the recommendation shipped
+#   pending-followup              print slug + ts of most-recent TBD entry IF bucket=HIGH AND age > 3 days
+#   help
+#
+# Files:
+#   ~/.gstack/calibration.jsonl       append-only ledger
+#   ~/.gstack/calibration-config.json current thresholds + drift state
+
+set -euo pipefail
+
+LEDGER="${SOLVE_CALIB_LEDGER:-$HOME/.gstack/calibration.jsonl}"
+CONFIG="${SOLVE_CALIB_CONFIG:-$HOME/.gstack/calibration-config.json}"
+DEFAULT_HIGH_RUBRIC=8
+DRIFT_THRESHOLD_PCT=70
+MIN_AUDIT_ENTRIES=10
+
+mkdir -p "$(dirname "$LEDGER")"
+
+ensure_config() {
+  if [ ! -f "$CONFIG" ]; then
+    cat > "$CONFIG" <<JSON
+{"high_rubric_min": $DEFAULT_HIGH_RUBRIC, "drift_warning": null, "audited_at": null, "high_success_rate": null}
+JSON
+  fi
+}
+
+cmd_help() {
+  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+cmd_log() {
+  local slug="$1" run_id="$2" bucket="$3" rubric="$4" posterior="$5" rec="$6"
+  ensure_config
+  local now ts
+  now=$(date +%s)
+  ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  python3 - "$LEDGER" "$slug" "$run_id" "$bucket" "$rubric" "$posterior" "$rec" "$now" "$ts" <<'PY'
+import json, sys
+ledger, slug, run_id, bucket, rubric, posterior, rec, now, ts = sys.argv[1:]
+row = {
+  "slug": slug,
+  "run_id": run_id,
+  "ts_completed": int(now),
+  "ts_completed_iso": ts,
+  "bucket": bucket,
+  "rubric": float(rubric) if rubric != "null" else None,
+  "posterior": float(posterior) if posterior != "null" else None,
+  "recommendation_summary": rec,
+  "outcome": "TBD",
+  "outcome_ts": None,
+  "outcome_evidence": None,
+}
+with open(ledger, "a") as f:
+  f.write(json.dumps(row) + "\n")
+print(json.dumps({"logged": row}))
+PY
+}
+
+cmd_log_outcome() {
+  local slug="$1" outcome="$2" evidence="${3:-}"
+  case "$outcome" in
+    success|mixed|failure|aborted|stale_no_followup) ;;
+    *) echo "ERROR: invalid outcome: $outcome" >&2; exit 2 ;;
+  esac
+  if [ ! -f "$LEDGER" ]; then echo "ERROR: no ledger at $LEDGER" >&2; exit 2; fi
+  python3 - "$LEDGER" "$slug" "$outcome" "$evidence" <<'PY'
+import json, sys, time
+ledger, slug, outcome, evidence = sys.argv[1:]
+with open(ledger) as f:
+  rows = [json.loads(l) for l in f if l.strip()]
+# Find most-recent TBD entry for slug
+target_idx = None
+for i in range(len(rows) - 1, -1, -1):
+  if rows[i]["slug"] == slug and rows[i]["outcome"] == "TBD":
+    target_idx = i; break
+if target_idx is None:
+  print(json.dumps({"error": "no TBD entry for slug", "slug": slug}))
+  sys.exit(1)
+rows[target_idx]["outcome"] = outcome
+rows[target_idx]["outcome_ts"] = int(time.time())
+rows[target_idx]["outcome_evidence"] = evidence or None
+with open(ledger, "w") as f:
+  for r in rows: f.write(json.dumps(r) + "\n")
+print(json.dumps({"updated": rows[target_idx]}))
+PY
+}
+
+cmd_status() {
+  ensure_config
+  if [ ! -f "$LEDGER" ]; then
+    echo "{\"total\": 0, \"message\": \"no runs logged yet\"}"
+    return
+  fi
+  python3 - "$LEDGER" "$CONFIG" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+  rows = [json.loads(l) for l in f if l.strip()]
+with open(sys.argv[2]) as f:
+  cfg = json.load(f)
+total = len(rows)
+buckets = {"HIGH": 0, "MEDIUM": 0, "LOW": 0}
+outcomes = {"TBD": 0, "success": 0, "mixed": 0, "failure": 0, "aborted": 0, "stale_no_followup": 0}
+high_settled = 0
+high_success = 0
+for r in rows:
+  buckets[r.get("bucket", "")] = buckets.get(r.get("bucket", ""), 0) + 1
+  out = r.get("outcome", "TBD")
+  outcomes[out] = outcomes.get(out, 0) + 1
+  if r.get("bucket") == "HIGH" and out != "TBD":
+    high_settled += 1
+    if out == "success":
+      high_success += 1
+rate = (high_success / high_settled * 100) if high_settled else None
+out = {
+  "total": total,
+  "buckets": buckets,
+  "outcomes": outcomes,
+  "high_settled": high_settled,
+  "high_success_rate_pct": rate,
+  "high_rubric_min": cfg.get("high_rubric_min"),
+  "drift_warning": cfg.get("drift_warning"),
+  "audited_at": cfg.get("audited_at"),
+}
+print(json.dumps(out, indent=2))
+PY
+}
+
+cmd_audit() {
+  ensure_config
+  if [ ! -f "$LEDGER" ]; then echo "{\"audited\": false, \"reason\": \"no ledger\"}"; return; fi
+  python3 - "$LEDGER" "$CONFIG" "$MIN_AUDIT_ENTRIES" "$DRIFT_THRESHOLD_PCT" "$DEFAULT_HIGH_RUBRIC" <<'PY'
+import json, sys, time
+ledger, cfg_path, min_entries, drift_pct, default_rubric = sys.argv[1:]
+min_entries = int(min_entries); drift_pct = int(drift_pct); default_rubric = int(default_rubric)
+with open(ledger) as f:
+  rows = [json.loads(l) for l in f if l.strip()]
+with open(cfg_path) as f:
+  cfg = json.load(f)
+high_settled = [r for r in rows if r.get("bucket") == "HIGH" and r.get("outcome", "TBD") not in ("TBD", "stale_no_followup")]
+if len(high_settled) < min_entries:
+  result = {
+    "audited": False,
+    "reason": f"only {len(high_settled)} settled HIGH runs (need {min_entries})",
+    "current_count": len(high_settled),
+  }
+  print(json.dumps(result, indent=2)); sys.exit(0)
+successes = sum(1 for r in high_settled if r["outcome"] == "success")
+rate_pct = (successes / len(high_settled)) * 100
+result = {
+  "audited": True,
+  "high_settled": len(high_settled),
+  "high_success_rate_pct": rate_pct,
+  "drift_threshold_pct": drift_pct,
+  "drift_detected": rate_pct < drift_pct,
+}
+if rate_pct < drift_pct:
+  new_rubric = cfg.get("high_rubric_min", default_rubric) + 1
+  cfg["high_rubric_min"] = min(new_rubric, 10)
+  cfg["drift_warning"] = f"HIGH bucket success rate is {rate_pct:.0f}% over your last {len(high_settled)} runs (below {drift_pct}% threshold). HIGH rubric requirement raised to {cfg['high_rubric_min']}."
+  cfg["audited_at"] = int(time.time())
+  cfg["high_success_rate_pct"] = rate_pct
+  result["action"] = "raised_high_rubric_to_" + str(cfg['high_rubric_min'])
+else:
+  cfg["drift_warning"] = None
+  cfg["audited_at"] = int(time.time())
+  cfg["high_success_rate_pct"] = rate_pct
+  result["action"] = "no_change"
+with open(cfg_path, "w") as f:
+  json.dump(cfg, f, indent=2)
+print(json.dumps(result, indent=2))
+PY
+}
+
+cmd_reset() {
+  cat > "$CONFIG" <<JSON
+{"high_rubric_min": $DEFAULT_HIGH_RUBRIC, "drift_warning": null, "audited_at": null, "high_success_rate": null}
+JSON
+  echo "{\"reset\": true, \"high_rubric_min\": $DEFAULT_HIGH_RUBRIC}"
+}
+
+cmd_pending_followup() {
+  if [ ! -f "$LEDGER" ]; then echo "{}"; return; fi
+  python3 - "$LEDGER" <<'PY'
+import json, sys, time
+with open(sys.argv[1]) as f:
+  rows = [json.loads(l) for l in f if l.strip()]
+now = time.time()
+THREE_DAYS = 3 * 24 * 3600
+THIRTY_DAYS = 30 * 24 * 3600
+target = None
+for r in reversed(rows):
+  if r.get("bucket") == "HIGH" and r.get("outcome") == "TBD":
+    age = now - r.get("ts_completed", now)
+    if age >= THREE_DAYS and age <= THIRTY_DAYS:
+      target = r; break
+    if age > THIRTY_DAYS:
+      r["outcome"] = "stale_no_followup"
+      r["outcome_ts"] = int(now)
+      target = None
+      break
+print(json.dumps(target or {}))
+# If we marked stale, write back
+PY
+}
+
+cmd_detect_shipped() {
+  local slug="$1"
+  if ! command -v git >/dev/null 2>&1; then
+    echo "{\"detected\": false, \"reason\": \"git not available\"}"
+    return
+  fi
+  if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+    echo "{\"detected\": false, \"reason\": \"not in a git repo\"}"
+    return
+  fi
+  local since
+  since=$(date -v-14d -u +%Y-%m-%dT%H:%M:%S 2>/dev/null || date -u -d '14 days ago' +%Y-%m-%dT%H:%M:%S)
+  local matches
+  matches=$(git log --since="$since" --pretty=format:'%h %s' 2>/dev/null | grep -i -E "$(echo "$slug" | tr '-' '|' | head -c 80)" | head -10 || true)
+  if [ -n "$matches" ]; then
+    python3 -c "
+import json
+matches = '''$matches'''.strip().split('\n')
+print(json.dumps({'detected': True, 'count': len(matches), 'commits': matches[:5]}))
+"
+  else
+    echo "{\"detected\": false, \"slug\": \"$slug\"}"
+  fi
+}
+
+case "${1:-help}" in
+  log)              [ $# -ge 7 ] || { echo "usage: log <slug> <run_id> <bucket> <rubric> <posterior> <rec>" >&2; exit 2; }
+                    cmd_log "$2" "$3" "$4" "$5" "$6" "$7" ;;
+  log-outcome)      [ $# -ge 3 ] || { echo "usage: log-outcome <slug> <outcome> [evidence]" >&2; exit 2; }
+                    cmd_log_outcome "$2" "$3" "${4:-}" ;;
+  status)           cmd_status ;;
+  audit)            cmd_audit ;;
+  reset)            cmd_reset ;;
+  detect-shipped)   [ $# -ge 2 ] || { echo "usage: detect-shipped <slug>" >&2; exit 2; }
+                    cmd_detect_shipped "$2" ;;
+  pending-followup) cmd_pending_followup ;;
+  help|-h|--help)   cmd_help ;;
+  *)                echo "unknown subcommand: $1" >&2; cmd_help; exit 2 ;;
+esac

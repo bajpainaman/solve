@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "docs",
+      "repo": "https://github.com/centre-for-dpi/docs",
+      "ref": "a9735941d2179946a9dfc1c9848a0f27c8f58cfe",
+      "license": "CC-BY-SA-4.0",
+      "site": "https://docs.cdpi.dev/"
+    },
+    {
+      "id": "ai-skills",
+      "repo": "https://github.com/centre-for-dpi/ai-skills",
+      "ref": "041a9e2faa0c2f7fbb5caac89c104e6d9fd4e9ff",
+      "license": "none published; fetched locally, never redistributed",
+      "site": "https://github.com/centre-for-dpi/ai-skills/tree/main/skills"
+    }
+  ]
+}

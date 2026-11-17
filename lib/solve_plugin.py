@@ -18,6 +18,11 @@ COMMANDS = ("artifact", "benchmark", "budget-track", "calibration", "cost-track"
 MODULES = ("solve_benchmark.py", "solve_contract.py", "solve_html.py", "solve_output.py",
            "solve_portable.py", "solve_prose.py", "solve_templates.py")
 SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+# Sibling skills that plugin/ROUTING.md routes between, committed under skills/ at the pins in
+# sources.json. skills/solve itself is generated from this package (see write_tree).
+SIBLINGS = ("cdpi", "impeccable")
+EXECUTABLES = ("skills/solve/bin/", "skills/cdpi/bin/", "skills/cdpi/install",
+               "skills/impeccable/scripts/impeccable")
 FORBIDDEN_PARTS = {".git", ".env", "__pycache__", "node_modules", "private", ".DS_Store"}
 
 
@@ -64,12 +69,22 @@ def collect(root=ROOT):
         require(not path.is_symlink(), f"symlink in plugin overrides: {path}")
         if path.is_file():
             entries[skill + path.relative_to(override_root).as_posix()] = read_file(path)
+    entries["ROUTING.md"] = read_file(root / "plugin/ROUTING.md")
+    sibling_files = git_output(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--",
+                               *[f"skills/{s}" for s in SIBLINGS])
+    for relative in sibling_files.decode().split("\0"):
+        if relative and (root / relative).is_file():
+            entries[relative] = read_file(root / relative)
+    pins = {s["id"]: s for s in json.loads(read_file(root / "sources.json"))["sources"]}
+    fields = dict(l.split("=", 1) for l in entries["skills/impeccable/SOURCE"].decode().splitlines() if "=" in l)
+    require(fields.get("ref") == pins["impeccable"]["ref"], "skills/impeccable does not match its pin; run bin/impeccable-sync")
     lock = {
         "repository": manifest["repository"],
         "source_commit": git_output(root, "rev-parse", "HEAD").decode().strip(),
         "source_dirty": bool(git_output(root, "status", "--porcelain", "--untracked-files=normal").strip()),
         "runtime_version": entries[skill + "VERSION"].decode().strip(),
         "plugin_version": manifest["version"],
+        "bundled_skills": {"cdpi": pins["cdpi"]["ref"], "impeccable": pins["impeccable"]["ref"]},
         "excluded_dependency": "html-artifact; no upstream license, never redistributed",
         "files": {name: hashlib.sha256(data).hexdigest() for name, data in sorted(entries.items())},
     }
@@ -107,12 +122,20 @@ def validate(entries):
     require(isinstance(frontmatter, dict) and frontmatter.get("name") == "solve", "invalid skill name")
     require(isinstance(frontmatter.get("description"), str) and frontmatter["description"].strip(), "missing skill description")
     require(len(entries[skill_path]) < 1024 * 1024, "skill too large")
+    for sibling in SIBLINGS:
+        text = entries.get(f"skills/{sibling}/SKILL.md", b"").decode("utf-8")
+        require(text.startswith("---\n") and "\n---\n" in text[4:], f"missing {sibling} skill")
+        meta = yaml.safe_load(text.split("\n---\n", 1)[0][4:])
+        require(isinstance(meta, dict) and meta.get("name") == sibling, f"invalid {sibling} skill name")
+    require(not any(n.startswith("skills/cdpi/") and "/sources/" in n for n in entries), "cdpi sources are never bundled")
     agent = yaml.safe_load(entries["skills/solve/agents/openai.yaml"])
     require(agent["interface"]["display_name"] and agent["interface"]["short_description"], "invalid agent interface")
     require(type(agent.get("policy", {}).get("allow_implicit_invocation")) is bool, "invalid invocation policy")
     for name in ("LICENSE", "skills/solve/write/LICENSE", "skills/solve/templates/html-effectiveness/LICENSE",
                  "skills/solve/templates/html-effectiveness/NOTICE.md", "skills/solve/references/decision.md",
-                 "skills/solve/references/artifacts.md", "skills/solve/references/writing.md"):
+                 "skills/solve/references/artifacts.md", "skills/solve/references/writing.md",
+                 "ROUTING.md", "skills/cdpi/LICENSE", "skills/cdpi/reference/LICENSE.md",
+                 "skills/impeccable/LICENSE", "skills/impeccable/NOTICE.md"):
         require(name in entries and entries[name].strip(), f"missing component: {name}")
     catalog = json.loads(entries["skills/solve/gates/catalog.json"])
     require(len(catalog["gates"]) == 28, "do not weaken the 28-gate contract while packaging")
@@ -127,7 +150,9 @@ def validate(entries):
     for name, digest in source["files"].items():
         require(hashlib.sha256(entries[name]).hexdigest() == digest, f"source index mismatch: {name}")
     # Check all local links in authored portable instructions, excluding quoted upstream examples.
-    instructions = [n for n in entries if n in (skill_path, "skills/solve/write/WRITE.md") or
+    instructions = [n for n in entries if n in (skill_path, "skills/solve/write/WRITE.md", "ROUTING.md",
+                                                "skills/cdpi/SKILL.md") or
+                    n.startswith("skills/cdpi/reference/") or
                     n.startswith("skills/solve/references/") and n.split("/")[-1] in
                     {"decision.md", "operating-rules.md", "artifacts.md", "writing.md", "router.md", "output.md"}]
     import posixpath
@@ -138,7 +163,7 @@ def validate(entries):
             resolved = posixpath.normpath(posixpath.join(posixpath.dirname(name), target.split("#")[0]))
             require(resolved in entries, f"broken instruction link in {name}: {target}")
     return {"name": manifest["name"], "version": manifest["version"], "files": len(entries),
-            "skills": ["solve"], "gates": len(catalog["gates"]), "templates": len(templates["templates"]),
+            "skills": ["solve", *SIBLINGS], "gates": len(catalog["gates"]), "templates": len(templates["templates"]),
             "entry_words": len(skill.split()), "entry_bytes": len(entries[skill_path]),
             "source_commit": source["source_commit"], "source_dirty": source["source_dirty"]}
 
@@ -148,7 +173,7 @@ def archive_bytes(entries):
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for name, contents in sorted(entries.items()):
             info = zipfile.ZipInfo("solve/" + name, date_time=(2026, 1, 1, 0, 0, 0))
-            mode = 0o755 if name.startswith("skills/solve/bin/") else 0o644
+            mode = 0o755 if name.startswith(EXECUTABLES) else 0o644
             info.create_system = 3
             info.external_attr = (stat.S_IFREG | mode) << 16
             info.compress_type = zipfile.ZIP_DEFLATED
@@ -168,11 +193,35 @@ def inspect_archive(data):
     return validate(entries)
 
 
+def write_tree(entries, skills_dir):
+    """Write skills/solve from the package, so `npx skills add` installs the same files as the plugin."""
+    target = Path(skills_dir) / "solve"
+    stage = target.with_name("solve.new")
+    import shutil
+    shutil.rmtree(stage, ignore_errors=True)
+    for name, data in entries.items():
+        if name.startswith("skills/solve/"):
+            path = stage / name[len("skills/solve/"):]
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+            path.chmod(0o755 if name.startswith(EXECUTABLES) else 0o644)
+    shutil.rmtree(target, ignore_errors=True)
+    stage.rename(target)
+    return target
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", required=True, help="new .zip path outside the source components")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--output", help="new .zip path outside the source components")
+    group.add_argument("--tree", action="store_true", help="regenerate skills/solve for npx skills add")
     args = parser.parse_args(argv)
     try:
+        if args.tree:
+            entries = collect()
+            validate(entries)
+            print(f"wrote {write_tree(entries, ROOT / 'skills')}")
+            return 0
         output = Path(args.output).resolve()
         require(output.suffix.lower() == ".zip", "output must be a ZIP file")
         require(not output.exists(), "output exists; choose a new archive path")
