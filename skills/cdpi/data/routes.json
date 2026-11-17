@@ -1,0 +1,102 @@
+{
+  "default": "lens",
+  "commands": {
+    "lens": {
+      "summary": "Review a design, PR, schema or architecture against the five DPI principles",
+      "card": "lens.md",
+      "triggers": ["review", "lens", "principles", "architecture", "design", "pr", "diff", "rfc", "proposal", "critique", "audit", "check this", "dpi thinking", "is this good", "tradeoff"]
+    },
+    "unbundle": {
+      "summary": "Split a monolith or full-stack plan into minimal blocks joined by open protocols",
+      "card": "unbundle.md",
+      "triggers": ["monolith", "full stack", "full-stack", "end to end", "end-to-end", "platform", "superapp", "super app", "portal", "split", "decompose", "modular", "modules", "building blocks", "microservices", "scope", "mvp", "too big", "everything app"]
+    },
+    "plus-one": {
+      "summary": "The smallest addition that makes an existing system reusable by others, instead of a rewrite",
+      "card": "plus-one.md",
+      "triggers": ["+1", "plus one", "existing", "legacy", "rewrite", "migrate", "migration", "retrofit", "already have", "upgrade", "incremental", "wrap", "wrapper", "quick win", "smallest change"]
+    },
+    "rails-check": {
+      "summary": "How far a system is from being infrastructure others build on: a maturity rating, not yes or no",
+      "card": "rails-check.md",
+      "triggers": ["is my", "is this a dpi", "is it a dpi", "infrastructure", "rails", "rail", "reusable", "maturity", "score", "rate", "really dpi", "public good", "dpg", "ecosystem", "third party", "third-party", "others build"]
+    },
+    "spec-first": {
+      "summary": "Write the protocol, schema and API contract before any UI or implementation",
+      "card": "spec-first.md",
+      "triggers": ["spec", "specification", "protocol", "schema", "api", "openapi", "contract", "interface", "standard", "interop", "interoperability", "integrate", "integration", "sdk", "format", "versioning"]
+    },
+    "explain": {
+      "summary": "The DPI ideas themselves: rails vs apps, DPG vs DPI, the three block families, the myths",
+      "card": "explain.md",
+      "triggers": ["what is", "explain", "define", "meaning", "difference", "versus", "vs", "overview", "101", "why", "philosophy", "myth", "mandate", "competition", "digital divide"]
+    }
+  },
+  "blocks": {
+    "identity": {
+      "triggers": ["identity", "id", "auth", "authentication", "login", "sso", "oauth", "oidc", "kyc", "ekyc", "account", "accounts", "biometric", "session", "user id"],
+      "docs": ["technical-notes/digital-ids-and-electronic-registries/digital-id/capabilities-on-id-system.md", "technical-notes/digital-ids-and-electronic-registries/digital-id/id-auth.md", "technical-notes/digital-ids-and-electronic-registries/digital-id/ekyc-identity-profile-sharing.md"],
+      "skills": ["dpi-digital-id", "dpi-e-signet"]
+    },
+    "signing": {
+      "triggers": ["signature", "signatures", "signed", "sign", "signing", "pki", "keys", "key", "certificate", "trust", "audit log", "tamper", "non-repudiation", "attestation", "hsm"],
+      "docs": ["technical-notes/digital-ids-and-electronic-registries/electronic-signature-pki-and-trust-infra/digital-signatures-and-pki.md", "technical-notes/digital-ids-and-electronic-registries/electronic-signature-pki-and-trust-infra/executing-a-decentralised-trust-model.md"],
+      "skills": ["dpi-trust-infra"]
+    },
+    "consent": {
+      "triggers": ["consent", "permission", "permissions", "privacy", "pii", "personal data", "gdpr", "minimisation", "minimization", "tokenisation", "tokenization", "masking", "encryption"],
+      "docs": ["technical-notes/digital-ids-and-electronic-registries/electronic-signature-pki-and-trust-infra/econsent.md", "the-dpi-wiki/dpi-tech-architecture-principles/security-and-privacy-by-design.md", "mythbusters-and-faqs/dpi-and-privacy-security.md"],
+      "skills": ["dpi-trust-infra", "dpi-data-sharing-models"]
+    },
+    "registry": {
+      "triggers": ["registry", "registries", "database", "db", "records", "source of truth", "master data", "store", "storage", "central", "centralised", "centralized", "warehouse", "data lake"],
+      "docs": ["the-dpi-wiki/is-my-system-a-dpi/README.md", "the-dpi-wiki/dpi-tech-architecture-principles/federated-and-decentralised-by-design.md"],
+      "skills": ["dpi-registries"]
+    },
+    "credentials": {
+      "triggers": ["credential", "credentials", "vc", "vcs", "verifiable", "qr", "wallet", "did", "dids", "sd-jwt", "jwt", "mdoc", "selective disclosure", "proof", "badge"],
+      "docs": ["technical-notes/data-and-credentialing-infra/verifiable-credentials/README.md", "technical-notes/data-and-credentialing-infra/verifiable-credentials/decision-framework-for-verifiable-credentials/README.md", "technical-notes/data-and-credentialing-infra/verifiable-credentials/dids-and-pki-in-verifiable-credentials.md"],
+      "skills": ["verifiable-credentials", "dpi-inji", "dpi-credebl"]
+    },
+    "data-sharing": {
+      "triggers": ["data sharing", "share data", "sync", "exchange", "webhook", "webhooks", "events", "pub sub", "federation", "federated", "x-road", "bridge", "cross-chain", "oapp", "interop", "messaging"],
+      "docs": ["technical-notes/data-and-credentialing-infra/a-primer-to-personal-data-sharing.md", "technical-notes/data-and-credentialing-infra/data-exchanges-system-to-system-data-sharing/data-exchange-101.md", "technical-notes/data-and-credentialing-infra/data-exchanges-system-to-system-data-sharing/getting-started-the-+1-approach.md"],
+      "skills": ["dpi-data-exchange", "dpi-data-sharing-models", "dpi-x-road"]
+    },
+    "open-data": {
+      "triggers": ["open data", "analytics", "dataset", "datasets", "export", "csv", "dump", "indexer", "aggregate", "statistics", "public api"],
+      "docs": ["technical-notes/data-and-credentialing-infra/non-personal-anonymised-datasets.md", "technical-notes/data-and-credentialing-infra/building-data-analytics-pipelines.md", "technical-notes/data-and-credentialing-infra/data-standards.md"],
+      "skills": ["dpi-data-sharing-models"]
+    },
+    "payments": {
+      "triggers": ["payment", "payments", "pay", "transfer", "settlement", "wallet", "token", "tokens", "stablecoin", "merchant", "checkout", "address", "routing", "switch", "ledger"],
+      "docs": ["dpi/digital-payment-networks/README.md", "technical-notes/digital-payment-networks/financial-address.md", "dpi/digital-payment-networks/interoperable-qr-code.md"],
+      "skills": ["dpi-payments"]
+    },
+    "protocols": {
+      "triggers": ["protocol", "network", "open network", "marketplace", "discovery", "beckn", "platform", "platforms", "aggregator", "walled garden", "lock-in", "vendor lock-in", "network effects"],
+      "docs": ["technical-notes/digital-payment-networks/discovery-and-fulfillment-networks/platforms-to-protocols.md", "the-dpi-wiki/dpi-tech-architecture-principles/interoperability.md"],
+      "skills": ["dpi-discovery-fulfilment"]
+    },
+    "access": {
+      "triggers": ["offline", "low bandwidth", "mobile", "sms", "ussd", "cli", "accessibility", "a11y", "front end", "frontend", "client", "clients", "ui", "app", "multi-modal", "degraded"],
+      "docs": ["the-dpi-wiki/dpi-tech-architecture-principles/diverse-inclusive-innovation.md", "mythbusters-and-faqs/readme.md"],
+      "skills": ["dpi-superapp"]
+    },
+    "deployment": {
+      "triggers": ["cloud", "deploy", "deployment", "hosting", "kubernetes", "k8s", "portability", "self-host", "self-hosted", "on-prem", "vendor", "aws", "infra"],
+      "docs": ["technical-notes/cloud-agnostic-deployment-of-dpi-and-data-portability/architectural-principles-for-cloud-agnostic-dpi.md", "technical-notes/cloud-agnostic-deployment-of-dpi-and-data-portability/challenges-and-trade-offs.md"],
+      "skills": ["dpi-cloud"]
+    },
+    "ai": {
+      "triggers": ["ai", "llm", "agent", "agents", "mcp", "model", "assistant", "tool calling", "workflow", "automation"],
+      "docs": ["initiatives/dpi-as-a-packaged-solution-daas/upcoming-daas-cohorts/ai-assistant.md"],
+      "skills": ["dpi-mcp-dpg", "dpi-ai-blocks", "dpi-public-agents", "dpi-ai-workflows"]
+    },
+    "rollout": {
+      "triggers": ["adoption", "launch", "rollout", "first use case", "first users", "pilot", "go to market", "gtm", "growth", "pricing", "charge", "governance", "roadmap", "sequence"],
+      "docs": ["the-dpi-wiki/first-use-case-for-dpi.md", "the-dpi-wiki/dpi-implementation-and-execution-guidance.md", "mythbusters-and-faqs/dpi-and-mandating-adoption.md"],
+      "skills": ["dpi-+1-approach"]
+    }
+  }
+}

@@ -15,6 +15,12 @@ the workflow needed for the request.
 
 ## Route once
 
+Sibling skills: when `../cdpi/SKILL.md` or `../impeccable/SKILL.md` exists beside
+this skill, send "how should this software be built" requests (architecture, API,
+protocol, PR review, rewrite vs extend) to cdpi and frontend design work to
+impeccable. In decide mode on an architecture choice, apply cdpi's `lens` card to
+each option as evidence. In the plugin, its top-level `ROUTING.md` already did this.
+
 | Request | Mode | Read |
 |---|---|---|
 | Choose between meaningful alternatives with stakes; assess a proposal or select the next experiment | decide | [decision](references/decision.md) |

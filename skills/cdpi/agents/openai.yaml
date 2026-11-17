@@ -1,0 +1,6 @@
+interface:
+  display_name: "CDPI"
+  short_description: "DPI thinking as an engineering lens"
+  default_prompt: "Use $cdpi to review this design against the DPI principles and name the smallest next change."
+policy:
+  allow_implicit_invocation: true

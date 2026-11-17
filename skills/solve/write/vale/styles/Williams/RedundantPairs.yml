@@ -1,0 +1,14 @@
+# Original advisory check based on Williams/Bizup, Concision, pages 126 to 142.
+extends: substitution
+message: "Consider '%s' for '%s' if no distinction or required emphasis is lost. Williams/Bizup, Concision, pages 126 to 142."
+level: suggestion
+scope: sentence
+ignorecase: true
+swap:
+  each and every: each
+  basic fundamentals: fundamentals
+  completely finished: finished
+  final outcome: outcome
+  end result: result
+  past history: history
+  future plans: plans

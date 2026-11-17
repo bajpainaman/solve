@@ -1,0 +1,39 @@
+extends: existence
+message: "'%s' is vague, promotional or model-favored. Use a direct verb, a concrete noun or a measurement."
+level: suggestion
+scope: ~code
+ignorecase: true
+tokens:
+  - comprehensive
+  - crucial
+  - cutting-edge
+  - delv(?:e|es|ed|ing)
+  - effortless
+  - ecosystem
+  - empower(?:s|ed|ing)?
+  - facilitat(?:e|es|ed|ing)
+  - foster(?:s|ed|ing)?
+  - fundamental
+  - game-changing
+  - innovative
+  - intricate
+  - journey
+  - landscape
+  - leverag(?:e|es|ed|ing)
+  - multifaceted
+  - nuanced
+  - pivotal
+  - powerful
+  - realm
+  - revolutionary
+  - robust
+  - scalable
+  - seamless(?:ly)?
+  - showcas(?:e|es|ed|ing)
+  - significant
+  - tapestry
+  - transformative
+  - unlock(?:s|ed|ing)?
+  - utiliz(?:e|es|ed|ing)
+  - vibrant
+  - world-class

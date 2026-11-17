@@ -1,0 +1,7 @@
+extends: existence
+message: "Replace the em dash with a period, comma, colon or parentheses."
+level: warning
+scope: ~code
+nonword: true
+tokens:
+  - '—'

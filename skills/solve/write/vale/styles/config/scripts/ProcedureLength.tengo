@@ -1,0 +1,44 @@
+text := import("text")
+count_words := func(value) {
+    value = text.re_replace("([\\p{L}])\\(s\\)", value, "$1s")
+    // Collapse nested parenthetical groups from the innermost group outward.
+    for depth := 0; depth < 32; depth++ {
+        next := text.re_replace("\\([^()]*\\)", value, " TOKEN ")
+        if next == value { break }
+        value = next
+    }
+    value = text.re_replace("\"[^\"]*\"|“[^”]*”", value, " TOKEN ")
+    value = text.re_replace("https?://\\S+", value, " TOKEN ")
+
+    value = text.re_replace("(?i)\\b[0-9]+(?:[.,][0-9]+)*\\s*(?:(?:degrees?\\s+(?:Celsius|Fahrenheit)|kilograms?|grams?|liters?|litres?|meters?|metres?|millimeters?|centimeters?|ohms?|knots?|seconds?|minutes?|hours?|feet|inches|pounds?|psi|kg|mg|g|km|cm|mm|m|ms|s|min|h|kHz|MHz|GHz|Hz|mV|V|mA|A|kW|W|MPa|kPa|Pa|mL|L)\\b|%|°[CF]|Ω)", value, " TOKEN ")
+    value = text.re_replace("\\b[0-9]+(?:[.,][0-9]+)*\\b", value, " TOKEN ")
+    words := text.re_find("[\\p{L}\\p{N}]+(?:[-'’_.][\\p{L}\\p{N}]+)*", value, -1)
+    if words == undefined { return 0 }
+    return len(words)
+}
+
+matches := []
+if count_words(scope) > 20 {
+    matches = append(matches, {begin: 0, end: len(scope)})
+}
+// Parenthetical prose is also subject to its own sentence-length limit (8.5).
+starts := []
+for index := 0; index < len(scope); index++ {
+    char := scope[index:index+1]
+    if char == "(" {
+        starts = append(starts, index)
+    } else if char == ")" && len(starts) > 0 {
+        begin := starts[len(starts)-1]
+        starts = starts[:len(starts)-1]
+        value := scope[begin+1:index]
+        sentences := text.re_find("[^.!?]+(?:[.!?]|$)", value, -1)
+        if sentences != undefined {
+            for sentence in sentences {
+                if count_words(sentence[0].text) > 20 {
+                    matches = append(matches, {begin: begin, end: index+1})
+                    break
+                }
+            }
+        }
+    }
+}

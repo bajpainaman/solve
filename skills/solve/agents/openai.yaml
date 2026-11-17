@@ -1,0 +1,6 @@
+interface:
+  display_name: "Solve"
+  short_description: "Decide, make artifacts, and write clearly with evidence"
+  default_prompt: "Use $solve to assess this request, check what matters, and produce a useful result."
+policy:
+  allow_implicit_invocation: true

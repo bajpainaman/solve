@@ -106,7 +106,7 @@ class UpdateTests(unittest.TestCase):
 
     def test_repo_pins_are_full_and_html_sync_reads_them(self):
         sources = u.load_sources()
-        self.assertEqual({s["id"] for s in sources}, {"solve", "html-artifact", "html-effectiveness", "simplify-writing"})
+        self.assertEqual({s["id"] for s in sources}, {"solve", "html-artifact", "html-effectiveness", "simplify-writing", "cdpi", "impeccable"})
         import solve_bundle
         self.assertEqual(solve_bundle.REF, u.pinned_ref("html-artifact"))
 

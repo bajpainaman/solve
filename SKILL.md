@@ -22,6 +22,8 @@ Read [router](references/router.md) for the full tables. In short:
 | Choose between options with stakes | **decide** | The workflow below. It ends in a verified HTML decision memo |
 | Rewrite, simplify, audit or lint prose | **write** | [write/WRITE.md](write/WRITE.md) |
 | A page, report, review, plan, explainer, deck, prototype or tool | **make** | `bin/templates match "<request>"`, then the renderer it names. HTML rules: [html/HTML.md](html/HTML.md) |
+| How software should be built: architecture, protocol, API, PR review, rewrite vs extend, "DPI thinking" | **cdpi** | [skills/cdpi/SKILL.md](skills/cdpi/SKILL.md). In decide mode on an architecture choice, apply its `lens` card to each option |
+| A frontend interface: design, critique, polish, animate | **impeccable** | [skills/impeccable/SKILL.md](skills/impeccable/SKILL.md) |
 | A short factual question | **answer** | Reply inline |
 | A reproducible bug, or an unvalidated product idea | **route** | investigate or office-hours. No decision run |
 
