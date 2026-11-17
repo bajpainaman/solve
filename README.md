@@ -35,7 +35,7 @@ bin/check-updates                                      # compare pins with upstr
 ## Install with npx
 
 ```bash
-npx skills add https://github.com/bajpainaman/solve/tree/main/skills
+npx skills add bajpainaman/solve
 ```
 
 That installs three skills side by side, for Claude Code, Codex, Amp, Cursor and 70+ other agents
@@ -48,8 +48,9 @@ That installs three skills side by side, for Claude Code, Codex, Amp, Cursor and
 | `impeccable` | [Frontend design](https://github.com/pbakaus/impeccable) by Paul Bakaus (Apache-2.0), pinned |
 
 Pick one with `--skill cdpi`, add `-g` for a global install, or `-a claude-code` to pick an agent.
-Use the `/tree/main/skills` path: the repository root also holds the development copy of solve, and its
-`SKILL.md` would hide the other two. The plugin zip (`bin/build-plugin`) bundles the same three skills
+The repository root also holds the development copy of solve. Its `SKILL.md` is marked
+`internal` so the CLI skips it and installs the three skills under `skills/`. `--skill solve` asks for it by
+name, so the CLI installs the whole development checkout instead; use `./install` for that copy. The plugin zip (`bin/build-plugin`) bundles the same three skills
 plus a `ROUTING.md` that picks one for each request.
 
 ## Quick start
