@@ -1,5 +1,8 @@
 ---
 name: solve
+# Hidden from `npx skills add` so it installs skills/solve, skills/cdpi and skills/impeccable instead.
+metadata:
+  internal: true
 description: One skill for decisions, clear writing and reviewable HTML pages. A router picks the mode first. Decide runs adaptive analysis with evidence-bound gates (FIRED, N/A, BLOCKED), a blind refuter and a consumer review, and ends in a verified decision-memo page. Make builds pages from 31 html-effectiveness templates (PR reviews, plans, postmortems, explainers, decks, prototypes, editors, blindspot passes) with built-in html-artifact components, formatting rules and verification. Write applies built-in simplify-writing (ASD-STE100 with Vale and Harper) to rewrite, audit or lint prose, and to all text this skill produces. Bugs and raw product ideas go to investigate and office-hours. Use for "should we", "help me decide", "write up the outage", "review this PR as a page", "make slides", "explain how X works", "what am I missing", "simplify this", "de-slop this".
 ---
 
