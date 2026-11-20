@@ -78,7 +78,7 @@ def sync(source, root=ROOT, force=False):
             if _excluded(relative, exclude):
                 continue
             require(not path.is_symlink(), f"{source['id']}: symlink {relative} is not vendored")
-            if path.is_file():
+            if path.is_file() and path.stat().st_size:  # empty placeholders read as binary to skill hosts
                 (stage / relative).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, stage / relative)
         for name in spec["keep"]:
