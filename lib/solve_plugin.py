@@ -133,6 +133,9 @@ def validate(entries):
         meta = yaml.safe_load(text.split("\n---\n", 1)[0][4:])
         require(isinstance(meta, dict) and meta.get("name") == sibling, f"invalid {sibling} skill name")
     require(not any(n.startswith("skills/cdpi/") and "/sources/" in n for n in entries), "cdpi sources are never bundled")
+    entry_skills = {f"skills/{s}/SKILL.md" for s in ("solve", *SIBLINGS)}
+    nested = [n for n in entries if PurePosixPath(n).name.lower() == "skill.md" and n not in entry_skills]
+    require(not nested, f"nested skill files would register as separate skills: {nested[:5]}")
     agent = yaml.safe_load(entries["skills/solve/agents/openai.yaml"])
     require(agent["interface"]["display_name"] and agent["interface"]["short_description"], "invalid agent interface")
     require(type(agent.get("policy", {}).get("allow_implicit_invocation")) is bool, "invalid invocation policy")

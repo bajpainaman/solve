@@ -8,32 +8,32 @@ license: MIT
 
 Vendored from [aasimsani/testing-toolkit](https://github.com/aasimsani/testing-toolkit) (MIT, see `LICENSE`) at the commit in `SOURCE`. Change it only through `bin/vendor-sync testing-toolkit` in the solve repository.
 
-`TOOLKIT_ROOT` is the directory that contains this file. The upstream skills say `${CLAUDE_PLUGIN_ROOT}`; read that as `TOOLKIT_ROOT`. Where one says to invoke `testing-toolkit:<name>` with the Skill tool, read `TOOLKIT_ROOT/skills/<name>/SKILL.md` instead.
+`TOOLKIT_ROOT` is the directory that contains this file. The upstream skills say `${CLAUDE_PLUGIN_ROOT}`; read that as `TOOLKIT_ROOT`. Its subskills are not registered as separate skills: each one's instructions are in `TOOLKIT_ROOT/skills/<name>/SKILL.upstream.md`. Where the upstream text says to invoke `testing-toolkit:<name>` or `<name>` with the Skill tool, or to read a subskill's `SKILL.md`, read that file instead.
 
 ## Route
 
-Start with `skills/testing/SKILL.md` unless the request names one kind of test. It classifies the change and calls the others in order. Read one sub-skill at a time, only when the playbook reaches it.
+Start with `skills/testing/SKILL.upstream.md` unless the request names one kind of test. It classifies the change and calls the others in order. Read one sub-skill at a time, only when the playbook reaches it.
 
 | Need | Read |
 |---|---|
-| Kind of test not decided yet, "add tests for this change" | `skills/testing/SKILL.md` |
-| A test plan or strategy for a repo or feature, no tests written yet | `skills/test-strategy/SKILL.md` |
-| Pure logic from a spec | `skills/test-unit/SKILL.md` |
-| Bugs at a database, cache, queue or filesystem boundary | `skills/test-integration/SKILL.md` |
-| Two services or a client and an API keep breaking each other | `skills/test-contract/SKILL.md` |
-| A user journey whose failure is an incident | `skills/test-e2e/SKILL.md` |
-| Legacy code with no tests, before a refactor | `skills/test-characterization/SKILL.md` |
-| dbt models, ETL and warehouse tables | `skills/test-data/SKILL.md` |
-| Rules over a large input space, refactor equivalence | `skills/test-property/SKILL.md` |
-| Parsers and code that read untrusted bytes | `skills/test-fuzz/SKILL.md` |
-| Latency and capacity thresholds | `skills/test-load/SKILL.md` |
-| Prompts, RAG chains, agents, model upgrades | `skills/test-llm-evals/SKILL.md` |
-| "Do these tests catch anything?" on a diff | `skills/test-mutation/SKILL.md` |
-| Review the tests in a PR | `skills/test-quality-review/SKILL.md` |
-| Intermittent CI failures | `skills/test-flaky-triage/SKILL.md` |
-| Shrink a bloated or agent-written suite | `skills/test-audit/SKILL.md` |
-| Fault injection in staging or production, DR drills | `skills/chaos-experiment/SKILL.md` |
-| Canaries, SLOs, burn-rate alerts, rollback plans | `skills/release-safety/SKILL.md` |
+| Kind of test not decided yet, "add tests for this change" | `skills/testing/SKILL.upstream.md` |
+| A test plan or strategy for a repo or feature, no tests written yet | `skills/test-strategy/SKILL.upstream.md` |
+| Pure logic from a spec | `skills/test-unit/SKILL.upstream.md` |
+| Bugs at a database, cache, queue or filesystem boundary | `skills/test-integration/SKILL.upstream.md` |
+| Two services or a client and an API keep breaking each other | `skills/test-contract/SKILL.upstream.md` |
+| A user journey whose failure is an incident | `skills/test-e2e/SKILL.upstream.md` |
+| Legacy code with no tests, before a refactor | `skills/test-characterization/SKILL.upstream.md` |
+| dbt models, ETL and warehouse tables | `skills/test-data/SKILL.upstream.md` |
+| Rules over a large input space, refactor equivalence | `skills/test-property/SKILL.upstream.md` |
+| Parsers and code that read untrusted bytes | `skills/test-fuzz/SKILL.upstream.md` |
+| Latency and capacity thresholds | `skills/test-load/SKILL.upstream.md` |
+| Prompts, RAG chains, agents, model upgrades | `skills/test-llm-evals/SKILL.upstream.md` |
+| "Do these tests catch anything?" on a diff | `skills/test-mutation/SKILL.upstream.md` |
+| Review the tests in a PR | `skills/test-quality-review/SKILL.upstream.md` |
+| Intermittent CI failures | `skills/test-flaky-triage/SKILL.upstream.md` |
+| Shrink a bloated or agent-written suite | `skills/test-audit/SKILL.upstream.md` |
+| Fault injection in staging or production, DR drills | `skills/chaos-experiment/SKILL.upstream.md` |
+| Canaries, SLOs, burn-rate alerts, rollback plans | `skills/release-safety/SKILL.upstream.md` |
 
 ## Boundaries with neighbours
 

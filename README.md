@@ -52,8 +52,9 @@ That installs eight skills side by side, for Claude Code, Codex, Amp, Cursor and
 | `sdlc-toolkit` | [A gated feature lifecycle](https://github.com/aasimsani/sdlc-toolkit) from intent to maintain, 12 stage skills (MIT), pinned |
 | `pr-review` | [Headless, read-only PR review](https://github.com/aasimsani/pr-review) of a PR, a local branch or a review queue (MIT), pinned |
 
-Each toolkit installs as one skill. Its upstream subskills sit under `skills/<toolkit>/skills/` and load only when
-the toolkit's entry skill routes to them, so a session pays for one short catalog, not the whole collection.
+Each toolkit installs as one skill. Its upstream subskills sit under `skills/<toolkit>/skills/<name>/SKILL.upstream.md`
+and load only when the toolkit's entry skill routes to them, so a session pays for one short catalog, not the whole
+collection. The rename keeps Amp, which registers every nested `SKILL.md`, from listing them as separate skills.
 
 Pick one with `--skill cdpi`, add `-g` for a global install, or `-a claude-code` to pick an agent.
 The repository root also holds the development copy of solve. Its `SKILL.md` is marked

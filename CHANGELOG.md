@@ -7,6 +7,7 @@ All notable changes to `solve` are documented here. The format follows [Keep a C
 ### Added
 - `skills/skill-router`: one router for every bundled skill. It picks a lead skill and at most two lenses, separates overlapping review, design, testing, verification, decision and lifecycle work, holds a generated one-line catalog of every subskill (all CDPI commands and ai-skills pages, impeccable commands, solve modes and templates, and all 49 toolkit subskills), and names the next skill to offer.
 - Vendored at pinned commits with their MIT licenses: testing-toolkit (18 skills), formal-verification-toolkit (18 skills, NOTICE kept), sdlc-toolkit (12 skills) and pr-review. Each installs as one entry skill that loads its subskills on demand.
+- Vendored subskills are stored as `SKILL.upstream.md`. Amp registers every nested `SKILL.md` as its own skill, which exposed 48 subskills, including generic names such as `plan`, `ship`, `test`, `setup` and `build`, beside the 8 entry skills. `bin/vendor-sync`, the package validator and the tests now refuse a nested `SKILL.md`.
 - `bin/vendor-sync <id>` replaces the impeccable-only sync for every vendored source. It refuses a license whose hash changed and any symlink, drops evals and harness hooks, and `--review REF` lists what a pin bump would change and flags new skills, scripts, hooks and license changes.
 
 ### Pending

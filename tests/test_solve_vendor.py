@@ -53,7 +53,9 @@ class VendorSyncTests(unittest.TestCase):
         self.assertEqual(v.sync(self.source, self.root)["status"], "synced")
         dest = self.root / "skills/kit"
         self.assertEqual((dest / "SKILL.md").read_text().split("\n")[1], "name: kit")
-        self.assertTrue((dest / "skills/one/SKILL.md").is_file())
+        self.assertTrue((dest / "skills/one/SKILL.upstream.md").is_file())
+        self.assertEqual([p for p in dest.rglob("*") if p.name.lower() == "skill.md"], [dest / "SKILL.md"],
+                         "a nested SKILL.md would register as its own skill in Amp")
         self.assertTrue((dest / "LICENSE").is_file())
         for dropped in ("evals", "hooks", ".claude-plugin"):
             self.assertFalse((dest / dropped).exists(), dropped)
@@ -100,7 +102,22 @@ class RepositoryPinTests(unittest.TestCase):
             license_file = dest / source["vendor"]["keep"][0]
             self.assertEqual(hashlib.sha256(license_file.read_bytes()).hexdigest(), source["vendor"]["license_sha256"], source_id)
             for name in source["vendor"]["required"]:
-                self.assertTrue((dest / name).is_file(), f"{source_id}: {name}")
+                self.assertTrue((dest / v.vendored_path(name)).is_file(), f"{source_id}: {name}")
+
+    def test_only_the_public_entry_skills_have_a_skill_md(self):
+        found = sorted(p.relative_to(v.ROOT / "skills").as_posix() for p in (v.ROOT / "skills").rglob("*")
+                       if p.name.lower() == "skill.md")
+        self.assertEqual(found, sorted(f"{name}/SKILL.md" for name in ("solve", "skill-router", "cdpi", "impeccable",
+                                                                         *solve_catalog.TOOLKITS)))
+
+    def test_wrapper_links_reach_the_vendored_subskills(self):
+        import re
+        for toolkit in solve_catalog.TOOLKITS:
+            text = (v.ROOT / "skills" / toolkit / "SKILL.md").read_text()
+            for target in set(re.findall(r"`(skills/[a-z0-9-]+/SKILL\.upstream\.md)`", text)):
+                self.assertTrue((v.ROOT / "skills" / toolkit / target).is_file(), f"{toolkit}: {target}")
+            for sub in (v.ROOT / "skills" / toolkit / "skills").iterdir():
+                self.assertIn(f"skills/{sub.name}/", text + (v.ROOT / solve_catalog.TARGET).read_text(), f"{toolkit}: {sub.name}")
 
     def test_toolkit_entry_skill_shadows_its_subskills(self):
         for toolkit in solve_catalog.TOOLKITS:
@@ -111,7 +128,7 @@ class RepositoryPinTests(unittest.TestCase):
     def test_catalog_names_every_subskill_and_is_current(self):
         text = (v.ROOT / solve_catalog.TARGET).read_text()
         self.assertEqual(text, solve_catalog.build(), "run bin/build-plugin --tree")
-        for skill in (v.ROOT / "skills").glob("*/skills/*/SKILL.md"):
+        for skill in (v.ROOT / "skills").glob("*/skills/*/SKILL.upstream.md"):
             self.assertIn(f"`{solve_catalog.frontmatter(skill)['name']}`", text, skill)
         for command in json.loads((v.ROOT / "skills/cdpi/data/routes.json").read_text())["commands"]:
             self.assertIn(f"`{command}`", text)

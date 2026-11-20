@@ -112,7 +112,7 @@ Each skill is pinned to one upstream commit in the solve repository's `sources.j
   - `optimize` (fix): Diagnose and fix UI performance.
   - `live` (iterate): Visual variant mode: pick elements in the browser, iterate on alternatives.
   - `generate` (iterate): Variants, versions, or alternatives of a named element to choose from in the live browser; no manual picking.
-- **testing-toolkit** (`../testing-toolkit/SKILL.md`; subskill `x` is `../testing-toolkit/skills/x/SKILL.md`): Decides which tests a change needs and writes, audits or plans them.
+- **testing-toolkit** (`../testing-toolkit/SKILL.md`; subskill `x` is `../testing-toolkit/skills/x/SKILL.upstream.md`): Decides which tests a change needs and writes, audits or plans them.
   - `chaos-experiment`: Plans a chaos or fault-injection experiment.
   - `release-safety`: Plans how a release is checked in production.
   - `test-audit`: Keeps a test suite as small as it can be while it still catches every credible regression.
@@ -131,7 +131,7 @@ Each skill is pinned to one upstream commit in the solve repository's `sources.j
   - `test-strategy`: Plans how a repo or a feature should be tested.
   - `test-unit`: Writes unit tests for pure logic from the spec: calculations, parsing, validation, business rules and state machines.
   - `testing`: Decides which kinds of test a change needs, and gets them written.
-- **fv-toolkit** (`../fv-toolkit/SKILL.md`; subskill `x` is `../fv-toolkit/skills/x/SKILL.md`): Settles correctness claims that tests cannot cover.
+- **fv-toolkit** (`../fv-toolkit/SKILL.md`; subskill `x` is `../fv-toolkit/skills/x/SKILL.upstream.md`): Settles correctness claims that tests cannot cover.
   - `formal-verification`: Decides which kind of check can settle a correctness question, and then runs it.
   - `fv-alloy`: Writes and checks an Alloy 6 model of structure: which configurations of entities and relations can exist together.
   - `fv-cedar`: Checks Cedar authorization policies against a schema with the cedar CLI.
@@ -150,7 +150,7 @@ Each skill is pinned to one upstream commit in the solve repository's `sources.j
   - `fv-tlaplus`: Writes and checks a TLA+ model of a protocol with TLC.
   - `fv-xstate`: Generates the shortest path to every reachable state of an XState v5 machine with @xstate/graph.
   - `fv-z3`: Encodes a rule table, a policy, or a config invariant as a Z3 SMT formula and asks whether a violation exists.
-- **sdlc-toolkit** (`../sdlc-toolkit/SKILL.md`; subskill `x` is `../sdlc-toolkit/skills/x/SKILL.md`): Runs a feature through a gated lifecycle with one committed artifact per stage under docs/sdlc/<slug>/.
+- **sdlc-toolkit** (`../sdlc-toolkit/SKILL.md`; subskill `x` is `../sdlc-toolkit/skills/x/SKILL.upstream.md`): Runs a feature through a gated lifecycle with one committed artifact per stage under docs/sdlc/<slug>/.
   - `adr`: After the PR merges, copies the approved RFC into an architectural decision record.
   - `build`: Implements an approved docs/sdlc/<slug>/plan.md phase by phase in ponytail mode, test first with the testing toolkit.
   - `demo`: Shows a finished feature working, as the optional demo in the Prove half of SDLC stage 6.
@@ -163,5 +163,5 @@ Each skill is pinned to one upstream commit in the solve repository's `sources.j
   - `ship`: Opens the PR, runs pr-review on it, fixes the blocking findings, records them in docs/sdlc/<slug>/review.md.
   - `spec`: Turns an approved intent into testable requirements and acceptance criteria at docs/sdlc/<slug>/spec.md.
   - `test`: Tests the finished feature, then proves it to the approver.
-- **pr-review** (`../pr-review/SKILL.md`; subskill `x` is `../pr-review/skills/x/SKILL.md`): Runs a headless, read-only code review of one GitHub PR, of the current local branch before a push.
+- **pr-review** (`../pr-review/SKILL.md`; subskill `x` is `../pr-review/skills/x/SKILL.upstream.md`): Runs a headless, read-only code review of one GitHub PR, of the current local branch before a push.
   - `pr-review`: Headless Claude code review using the bundled pr-review.sh script.

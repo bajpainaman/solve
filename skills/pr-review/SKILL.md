@@ -8,7 +8,7 @@ license: MIT
 
 Vendored from [aasimsani/pr-review](https://github.com/aasimsani/pr-review) (MIT, see `LICENSE`) at the commit in `SOURCE`. Change it only through `bin/vendor-sync pr-review` in the solve repository.
 
-`TOOLKIT_ROOT` is the directory that contains this file. Read `TOOLKIT_ROOT/skills/pr-review/SKILL.md` and follow it. Its `${CLAUDE_PLUGIN_ROOT}` is `TOOLKIT_ROOT`; the script is `TOOLKIT_ROOT/skills/pr-review/pr-review.sh`. Panel and lens examples are under `examples/`.
+`TOOLKIT_ROOT` is the directory that contains this file. Read `TOOLKIT_ROOT/skills/pr-review/SKILL.upstream.md`, the upstream instructions, and follow it. Its `${CLAUDE_PLUGIN_ROOT}` is `TOOLKIT_ROOT`; the script is `TOOLKIT_ROOT/skills/pr-review/pr-review.sh`. Panel and lens examples are under `examples/`.
 
 Each run starts a separate `claude -p` session that spends model usage. Say which mode will run and ask before the first run in a session, unless the user asked for it in those words. Without the `claude` CLI, `gh` or `jq`, say the review did not run.
 

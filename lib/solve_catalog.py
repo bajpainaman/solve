@@ -50,7 +50,7 @@ def summary(description, limit=MAX_LINE):
 
 def toolkit_lines(root, toolkit):
     lines = []
-    for skill in sorted((root / "skills" / toolkit / "skills").glob("*/SKILL.md")):
+    for skill in sorted((root / "skills" / toolkit / "skills").glob("*/SKILL.upstream.md")):
         meta = frontmatter(skill)
         lines.append(f"  - `{meta['name']}`: {summary(meta['description'])}.")
     return lines
@@ -76,7 +76,7 @@ def build(root=ROOT):
         out.append(f"  - `{name}` ({category.lower()}): {description.strip()}.")
     for toolkit in TOOLKITS:
         meta = frontmatter(root / "skills" / toolkit / "SKILL.md")
-        out.append(f"- **{toolkit}** (`../{toolkit}/SKILL.md`; subskill `x` is `../{toolkit}/skills/x/SKILL.md`): "
+        out.append(f"- **{toolkit}** (`../{toolkit}/SKILL.md`; subskill `x` is `../{toolkit}/skills/x/SKILL.upstream.md`): "
                    f"{summary(meta['description'])}.")
         out += toolkit_lines(root, toolkit)
     return "\n".join(out) + "\n"

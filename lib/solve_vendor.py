@@ -22,6 +22,17 @@ from solve_contract import ContractError, require
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_EXCLUDE = ("evals", ".claude-plugin", ".codex-plugin", "hooks")
+# Amp registers every SKILL.md up to five directories below a skills root, whatever its frontmatter says,
+# and so do npx --full-depth and recursive fallbacks. A vendored subskill keeps its text under this name,
+# so only our entry SKILL.md registers and the subskills load on demand by path.
+NESTED_SKILL = "SKILL.upstream.md"
+
+
+def vendored_path(relative):
+    """Where an upstream file lands in the vendored copy. Only the root SKILL.md keeps its name."""
+    relative = Path(relative)
+    nested = relative.name.lower() == "skill.md" and relative.parent != Path(".")
+    return relative.with_name(NESTED_SKILL) if nested else relative
 # Upstream files that can run code or change an agent's behaviour without being read first.
 RISKY_NAMES = ("hooks.json", "mcp.json", ".mcp.json", "plugin.json", "settings.json")
 
@@ -79,6 +90,7 @@ def sync(source, root=ROOT, force=False):
                 continue
             require(not path.is_symlink(), f"{source['id']}: symlink {relative} is not vendored")
             if path.is_file() and path.stat().st_size:  # empty placeholders read as binary to skill hosts
+                relative = vendored_path(relative)
                 (stage / relative).parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, stage / relative)
         for name in spec["keep"]:
@@ -92,6 +104,8 @@ def sync(source, root=ROOT, force=False):
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(path, target)
         require((stage / "SKILL.md").is_file(), f"{source['id']}: no SKILL.md at the vendored root")
+        stray = [p.relative_to(stage) for p in stage.rglob("*") if p.name.lower() == "skill.md" and p.parent != stage]
+        require(not stray, f"{source['id']}: nested skill files would register: {stray}")
         (stage / "SOURCE").write_text(f"repo={source['repo']}\nref={resolved}\nsynced_at={int(time.time())}\n"
                                       f"license={spec['license']}\nlicense_sha256={license_hash}\n")
     shutil.rmtree(dest, ignore_errors=True)

@@ -8,31 +8,31 @@ license: MIT
 
 Vendored from [aasimsani/formal-verification-toolkit](https://github.com/aasimsani/formal-verification-toolkit) (MIT, see `LICENSE` and `NOTICE.md`) at the commit in `SOURCE`. Change it only through `bin/vendor-sync fv-toolkit` in the solve repository.
 
-`TOOLKIT_ROOT` is the directory that contains this file. The upstream skills say `${CLAUDE_PLUGIN_ROOT}`; read that as `TOOLKIT_ROOT`. Where one says to load `fv-<tool>` with the Skill tool, read `TOOLKIT_ROOT/skills/fv-<tool>/SKILL.md`.
+`TOOLKIT_ROOT` is the directory that contains this file. The upstream skills say `${CLAUDE_PLUGIN_ROOT}`; read that as `TOOLKIT_ROOT`. Its subskills are not registered as separate skills: each one's instructions are in `TOOLKIT_ROOT/skills/<name>/SKILL.upstream.md`. Where the upstream text says to load `fv-<tool>` or another subskill with the Skill tool, or not to read its `SKILL.md` with a file tool, read that file instead; paths inside it are relative to its own directory.
 
 ## Route
 
-Always start with `skills/formal-verification/SKILL.md`. It triages the claims, and it says when no claim earns a formal check. Load one tool skill only after triage picks it:
+Always start with `skills/formal-verification/SKILL.upstream.md`. It triages the claims, and it says when no claim earns a formal check. Load one tool skill only after triage picks it:
 
 | The claim is about | Tool skill |
 |---|---|
-| Orderings, retries, crashes, message loss, leases | `skills/fv-tlaplus/SKILL.md` |
-| Shapes of data, permissions, tenancy, schemas | `skills/fv-alloy/SKILL.md` |
-| A Python function over all inputs, stateful sequences | `skills/fv-hypothesis/SKILL.md` |
-| Rule tables, policy diffs, pricing arithmetic | `skills/fv-z3/SKILL.md` |
-| A small calculation core that needs a proof | `skills/fv-dafny/SKILL.md` |
-| Rust arithmetic, panics, bounds | `skills/fv-kani/SKILL.md` |
-| Rust threads and shared state | `skills/fv-shuttle/SKILL.md` |
-| A Rust actor protocol | `skills/fv-stateright/SKILL.md` |
-| An auth or key-exchange protocol under an attacker | `skills/fv-tamarin/SKILL.md` |
-| Cedar authorization policies | `skills/fv-cedar/SKILL.md` |
-| A Python function's docstring contract, old vs new | `skills/fv-crosshair/SKILL.md` |
-| An OpenAPI service's real responses | `skills/fv-schemathesis/SKILL.md` |
-| A recorded transaction history and its isolation level | `skills/fv-elle/SKILL.md` |
-| An XState machine and its implementation | `skills/fv-xstate/SKILL.md` |
-| A cluster under crashes and message loss | `skills/fv-dst/SKILL.md` |
-| Two SQL queries that should return the same rows | `skills/fv-sqlequiv/SKILL.md` |
-| A model that may have drifted from the code | `skills/fv-maintain/SKILL.md` |
+| Orderings, retries, crashes, message loss, leases | `skills/fv-tlaplus/SKILL.upstream.md` |
+| Shapes of data, permissions, tenancy, schemas | `skills/fv-alloy/SKILL.upstream.md` |
+| A Python function over all inputs, stateful sequences | `skills/fv-hypothesis/SKILL.upstream.md` |
+| Rule tables, policy diffs, pricing arithmetic | `skills/fv-z3/SKILL.upstream.md` |
+| A small calculation core that needs a proof | `skills/fv-dafny/SKILL.upstream.md` |
+| Rust arithmetic, panics, bounds | `skills/fv-kani/SKILL.upstream.md` |
+| Rust threads and shared state | `skills/fv-shuttle/SKILL.upstream.md` |
+| A Rust actor protocol | `skills/fv-stateright/SKILL.upstream.md` |
+| An auth or key-exchange protocol under an attacker | `skills/fv-tamarin/SKILL.upstream.md` |
+| Cedar authorization policies | `skills/fv-cedar/SKILL.upstream.md` |
+| A Python function's docstring contract, old vs new | `skills/fv-crosshair/SKILL.upstream.md` |
+| An OpenAPI service's real responses | `skills/fv-schemathesis/SKILL.upstream.md` |
+| A recorded transaction history and its isolation level | `skills/fv-elle/SKILL.upstream.md` |
+| An XState machine and its implementation | `skills/fv-xstate/SKILL.upstream.md` |
+| A cluster under crashes and message loss | `skills/fv-dst/SKILL.upstream.md` |
+| Two SQL queries that should return the same rows | `skills/fv-sqlequiv/SKILL.upstream.md` |
+| A model that may have drifted from the code | `skills/fv-maintain/SKILL.upstream.md` |
 
 `scripts/fv-install` downloads pinned checkers. Tell the user what it will fetch before the first run. A missing tool is "not checked", never a pass.
 

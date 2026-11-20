@@ -16,9 +16,14 @@ skills, and several overlap with each other and with solve, cdpi and impeccable.
   table, the overlap rules and the next-step table. Its catalog is generated from the vendored files, so a pin bump
   updates it in the same commit. A test keeps it under 20 KB, because it is meant to load in every session.
 - Each toolkit installs as one skill. Our entry `SKILL.md` from `plugin/wrappers/<id>/` sits at the toolkit root,
-  and the upstream skills stay under `skills/<id>/skills/`. The skills CLI stops at the shallower `SKILL.md`, so the
-  49 subskills do not register as separate skills, collide with names already installed (`test-audit`, `review`,
-  `ship`, `plan`) or load their descriptions in every session.
+  and each upstream subskill stays under `skills/<id>/skills/<name>/`, renamed from `SKILL.md` to `SKILL.upstream.md`.
+  The rename is needed because Amp registers every `SKILL.md` up to five directories below a skills root, whatever
+  its frontmatter says (`disable-model-invocation`, `user-invocable: false` and `metadata.internal` do not stop it,
+  tested on Amp 0.0.1795190440), and `npx skills add --full-depth` does the same. The skills CLI's default walk
+  stops at the shallower `SKILL.md`, which is not enough for Amp. With the rename only the 8 entry skills register,
+  so the 49 subskills cannot collide with names already installed (`plan`, `ship`, `test`, `setup`, `build`) or
+  load their descriptions in every session. `bin/vendor-sync` applies the rename, refuses any nested `SKILL.md`, and
+  the package validator and tests refuse one too. Subskill bodies are moved byte for byte, not edited.
 - The four toolkits are MIT, so they are vendored with their `LICENSE` and, for fv-toolkit, `NOTICE.md`. Evals,
   plugin manifests and hooks are not copied: they add size or run on session start without being read.
   html-artifact and CDPI's ai-skills have no license and stay fetched-only, as in ADR-0002 and the cdpi skill.
