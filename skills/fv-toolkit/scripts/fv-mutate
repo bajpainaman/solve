@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+"""Plant each listed bug in a copy of the model or the code and confirm the check fails.
+
+Usage: fv-mutate <Name.mutations>
+
+A check that has never failed proves nothing. The mutations file lists the bugs
+the check must catch. It sits beside the files it edits. A line that starts
+with # is a comment.
+
+  run <command>              the check; it must exit 0 before any mutation
+  root <dir>                 optional; the tree to copy, relative to this file (default .)
+  properties <P> [<P> ...]   optional; each name needs a mutation that detects it
+  file <path>                the file that later blocks edit, relative to the root
+
+  mutation <label>           starts a planted bug
+  detects <Property>         the property or test that must fail
+  - <text>                   consecutive lines to replace; they must occur exactly once
+  + <text>                   the replacement lines; none deletes the text
+
+  harmless <label>           starts an edit that must leave the check green
+  - <text>
+  + <text>
+
+Each edit is applied to a temporary copy of the root, so the original files
+never change. The copy leaves out .git, .venv and node_modules. The run command
+gets the path of the original root in FV_ROOT, so it can name an interpreter
+there, as in `run "$FV_ROOT/.venv/bin/python" -m pytest -q tests`.
+
+The script prints one line per block:
+
+  DETECTED <label>: <the failing line>   the check failed and named the property
+  MISSED <label>                         the check still passed
+  ERROR <label>: <reason>                the check failed for another reason, or the edit did not apply
+  GREEN <label>                          a harmless edit left the check green
+  BRITTLE <label>                        a harmless edit turned the check red
+  UNCOVERED <Property>                   no mutation detected this property
+
+A mutation counts as DETECTED when the command exits non-zero and one output
+line contains both FAIL and the property name. fv-tlc, fv-alloy and pytest
+print such lines.
+
+Exit codes: 0 when every mutation is DETECTED, every harmless edit is GREEN and
+nothing is UNCOVERED; 1 otherwise; 2 on a usage error.
+
+Environment: FV_MUTATE_TIMEOUT, in seconds per run (default 600).
+"""
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass, field
+from pathlib import Path
+
+_IGNORED_NAMES = shutil.ignore_patterns(".git", "node_modules", ".venv", "states", "__pycache__", ".hypothesis", ".pytest_cache")
+
+
+def IGNORED(directory, names):
+    """Name the entries of one directory that the copy leaves out."""
+    skipped = set(_IGNORED_NAMES(directory, names))
+    # Cargo writes build output to target/ beside Cargo.toml. Another project may keep source in a target/ directory.
+    if "Cargo.toml" in names:
+        skipped.add("target")
+    return skipped
+
+
+@dataclass
+class Block:
+    kind: str  # "mutation" or "harmless"
+    label: str
+    file: str | None
+    detects: str | None = None
+    old: list[str] = field(default_factory=list)
+    new: list[str] = field(default_factory=list)
+
+
+def parse(text):
+    """Return (settings, blocks) from the text of a mutations file."""
+    settings = {"run": None, "root": ".", "properties": []}
+    blocks, current_file = [], None
+    for number, raw in enumerate(text.splitlines(), start=1):
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        if raw[:2] in ("- ", "+ ") or raw in ("-", "+"):
+            if not blocks:
+                raise ValueError(f"line {number}: an edit line comes before any mutation")
+            (blocks[-1].old if raw[0] == "-" else blocks[-1].new).append(raw[2:])
+            continue
+        word, _, rest = raw.strip().partition(" ")
+        rest = rest.strip()
+        if word in ("mutation", "harmless"):
+            blocks.append(Block(word, rest, current_file))
+        elif word == "detects" and blocks:
+            blocks[-1].detects = rest
+        elif word == "file":
+            current_file = rest
+            if blocks and not blocks[-1].old:
+                blocks[-1].file = rest
+        elif word in ("run", "root"):
+            settings[word] = rest
+        elif word == "properties":
+            settings["properties"] += rest.split()
+        else:
+            raise ValueError(f"line {number}: unknown directive '{word}'")
+    for block in blocks:
+        if not block.old:
+            raise ValueError(f"'{block.label}' has no '- ' line")
+        if block.file is None:
+            raise ValueError(f"'{block.label}' has no file; add a 'file <path>' line")
+        if block.kind == "mutation" and not block.detects:
+            raise ValueError(f"'{block.label}' has no 'detects' line")
+    if not settings["run"]:
+        raise ValueError("the file has no 'run <command>' line")
+    return settings, blocks
+
+
+def run_check(command, root, block=None):
+    """Copy the root, apply the block's edit, run the command, return (code, output).
+
+    A code of None means the edit did not apply or the run timed out, and the
+    output then holds the reason.
+    """
+    with tempfile.TemporaryDirectory(prefix="fv-mutate-") as scratch:
+        work = Path(scratch) / "work"
+        shutil.copytree(root, work, ignore=IGNORED)
+        if block is not None:
+            target = work / block.file
+            if not target.is_file():
+                return None, f"{block.file} does not exist"
+            source, old = target.read_text(), "\n".join(block.old)
+            if source.count(old) != 1:
+                return None, f"the text to replace occurs {source.count(old)} times in {block.file}"
+            target.write_text(source.replace(old, "\n".join(block.new)))
+        # The copy leaves out .venv and node_modules, so the command reaches them through FV_ROOT.
+        env = {**os.environ, "FV_ROOT": str(root),
+               "PATH": f"{Path(__file__).resolve().parent}{os.pathsep}{os.environ.get('PATH', '')}"}
+        try:
+            run = subprocess.run(
+                command, shell=True, cwd=work, env=env, capture_output=True, text=True,
+                timeout=int(os.environ.get("FV_MUTATE_TIMEOUT", "600")),
+            )
+        except subprocess.TimeoutExpired:
+            return None, "the check timed out"
+        return run.returncode, run.stdout + run.stderr
+
+
+def last_line(output):
+    lines = output.strip().splitlines()
+    return lines[-1].strip() if lines else "no output"
+
+
+def main(argv):
+    if len(argv) != 1 or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
+    path = Path(argv[0]).resolve()
+    try:
+        settings, blocks = parse(path.read_text())
+    except (OSError, ValueError) as error:
+        print(f"usage: fv-mutate <Name.mutations>\n{path.name}: {error}", file=sys.stderr)
+        return 2
+    root = (path.parent / settings["root"]).resolve()
+
+    code, output = run_check(settings["run"], root)
+    if code != 0:
+        print(f"BASELINE FAILED: '{settings['run']}' must pass before any mutation")
+        print("\n".join("  " + line for line in output.strip().splitlines()[-8:]))
+        return 1
+
+    counts = {"DETECTED": 0, "MISSED": 0, "ERROR": 0, "GREEN": 0, "BRITTLE": 0}
+    detected = set()
+    for block in blocks:
+        code, output = run_check(settings["run"], root, block)
+        if code is None:
+            verdict, detail = "ERROR", output
+        elif block.kind == "harmless":
+            verdict, detail = ("GREEN", "") if code == 0 else ("BRITTLE", last_line(output))
+        elif code == 0:
+            verdict, detail = "MISSED", ""
+        else:
+            hits = [line.strip() for line in output.splitlines() if "FAIL" in line and block.detects in line]
+            if hits:
+                verdict, detail = "DETECTED", hits[0]
+                detected.add(block.detects)
+            else:
+                verdict, detail = "ERROR", f"the check failed without naming {block.detects}: {last_line(output)}"
+        counts[verdict] += 1
+        print(f"{verdict} {block.label}" + (f": {detail}" if detail else ""))
+
+    uncovered = [name for name in settings["properties"] if name not in detected]
+    for name in uncovered:
+        print(f"UNCOVERED {name}")
+    print("SUMMARY " + " ".join(f"{key.lower()}={value}" for key, value in counts.items())
+          + f" uncovered={len(uncovered)}")
+    bad = counts["MISSED"] + counts["ERROR"] + counts["BRITTLE"] + len(uncovered)
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

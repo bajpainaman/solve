@@ -1,0 +1,12 @@
+[package]
+name = "fv-stateright-two-phase-commit"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "two_phase_commit"
+path = "src/lib.rs"
+
+[dependencies]
+stateright = "=0.31.0"

@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""Run TLC on each config and compare the outcome with the config's expect header.
+
+Usage: fv-tlc [--trace] [--json] <Spec.tla> [<Config.cfg> ...]
+
+With no config, every .cfg file beside the spec runs. Each config declares the
+outcome it must produce on a comment line:
+
+  \\* expect: holds                  TLC finds no error
+  \\* expect: violated <Invariant>   TLC reports that this invariant is violated
+  \\* expect: liveness               TLC reports a violated temporal property
+  \\* expect: deadlock               TLC reports a deadlock
+
+The script prints one line per config:
+
+  PASS <cfg>: <outcome> (<n> distinct states)
+  FAIL <cfg>: expected <header>, got <outcome>
+  ERROR <cfg>: <reason>              TLC could not check the spec
+
+A FAIL on a violation is followed by the counterexample, reduced to what each
+step changed. A function or a record is reduced to the keys that changed.
+--trace prints that reduction for every violation, including the ones a header
+expects.
+
+--json prints one object per config in place of the lines: config, expected,
+outcome, verdict, states, and trace. Each trace step has the action name, the
+full state as parsed values, and the changed values. A set and a sequence
+become a list, a function and a record become an object, and a model value
+becomes a string.
+
+Exit codes: 0 when every config passes, 1 on a FAIL or an ERROR, 2 on a usage
+error, and 3 when Java or the TLC jar is missing. Exit 3 means the spec was not
+checked, so never report it as a pass or as a failure of the model.
+
+Environment: FV_HOME (default ~/.cache/fv), JAVA (default: the first java that
+runs), FV_TLC_WORKERS (default 1).
+"""
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True  # Keep __pycache__ out of the installed plugin.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fvlib  # noqa: E402
+
+# TLC 1.7.4 exit codes, measured on the fixtures in tests/fixtures/tla.
+EXIT_HOLDS, EXIT_DEADLOCK, EXIT_SAFETY, EXIT_LIVENESS = 0, 11, 12, 13
+
+CFG_KEYWORDS = {
+    "SPECIFICATION", "INIT", "NEXT", "CONSTANT", "CONSTANTS", "INVARIANT",
+    "INVARIANTS", "PROPERTY", "PROPERTIES", "CONSTRAINT", "CONSTRAINTS",
+    "ACTION_CONSTRAINT", "ACTION_CONSTRAINTS", "SYMMETRY", "VIEW",
+    "CHECK_DEADLOCK", "ALIAS", "POSTCONDITION",
+}
+
+
+class ModelValue(str):
+    """A TLA+ model value. It prints without quotes, and a string prints with them."""
+
+
+class _Parser:
+    """Parse one value in the syntax TLC uses when it prints a state."""
+
+    def __init__(self, text):
+        self.text, self.pos = text, 0
+
+    def peek(self, token):
+        self.pos += len(self.text[self.pos:]) - len(self.text[self.pos:].lstrip())
+        return self.text.startswith(token, self.pos)
+
+    def take(self, token):
+        if not self.peek(token):
+            raise ValueError(f"expected {token!r} at {self.pos}")
+        self.pos += len(token)
+
+    def items(self, close, item):
+        out = []
+        while not self.peek(close):
+            out.append(item())
+            if self.peek(","):
+                self.take(",")
+        self.take(close)
+        return out
+
+    def value(self):
+        if self.peek("<<"):
+            self.take("<<")
+            return self.items(">>", self.value)
+        if self.peek("{"):
+            self.take("{")
+            return self.items("}", self.value)
+        if self.peek("["):
+            self.take("[")
+            return dict(self.items("]", self.field))
+        if self.peek("("):
+            self.take("(")
+            pairs = [self.pair()]
+            while self.peek("@@"):
+                self.take("@@")
+                pairs.append(self.pair())
+            self.take(")")
+            return dict(pairs)
+        if self.peek('"'):
+            match = re.compile(r'"((?:[^"\\]|\\.)*)"').match(self.text, self.pos)
+            self.pos = match.end()
+            return match.group(1)
+        match = re.compile(r"-?\d+|\w+").match(self.text, self.pos)
+        if not match:
+            raise ValueError(f"unexpected text at {self.pos}")
+        self.pos = match.end()
+        word = match.group(0)
+        if re.fullmatch(r"-?\d+", word):
+            if self.peek(".."):
+                self.take("..")
+                return list(range(int(word), int(self.value()) + 1))
+            return int(word)
+        return {"TRUE": True, "FALSE": False}.get(word, ModelValue(word))
+
+    def field(self):
+        name = re.compile(r"\w+").match(self.text, self.pos + len(self.text[self.pos:]) - len(self.text[self.pos:].lstrip()))
+        self.pos = name.end()
+        self.take("|->")
+        return name.group(0), self.value()
+
+    def pair(self):
+        key = self.value()
+        self.take(":>")
+        return (key if isinstance(key, (str, int)) else show(key)), self.value()
+
+
+def parse_value(text):
+    """Return the Python form of a TLC value, or the text itself when it does not parse."""
+    parser = _Parser(text.strip())
+    try:
+        value = parser.value()
+        return value if parser.pos == len(parser.text) else text.strip()
+    except (ValueError, AttributeError, IndexError):
+        return text.strip()
+
+
+def show(value):
+    """Print a parsed value in TLA+ syntax."""
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, ModelValue) or isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        return f'"{value}"'
+    if isinstance(value, list):
+        return "<<" + ", ".join(show(v) for v in value) + ">>"
+    return "[" + ", ".join(f"{k} |-> {show(v)}" for k, v in value.items()) + "]"
+
+
+def expect_header(cfg_text):
+    """Return the text after 'expect:' on the first header line, or None."""
+    match = re.search(r"^\s*\\\*\s*expect:\s*(.+?)\s*$", cfg_text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def temporal_properties(cfg_text):
+    """List the names under PROPERTY and PROPERTIES.
+
+    TLC does not say which temporal property failed, so the FAIL line names
+    every candidate.
+    """
+    names, collecting = [], False
+    for line in cfg_text.splitlines():
+        for token in line.split("\\*")[0].split():
+            if token in CFG_KEYWORDS:
+                collecting = token in ("PROPERTY", "PROPERTIES")
+            elif collecting:
+                names.append(token)
+    return names
+
+
+def outcome_of(returncode, output, cfg_text):
+    """Map a TLC run to an outcome string, or to None when TLC failed to check."""
+    if returncode == EXIT_HOLDS:
+        return "holds"
+    if returncode == EXIT_DEADLOCK:
+        return "deadlock"
+    if returncode == EXIT_SAFETY:
+        match = re.search(r"Invariant (\S+) is violated", output)
+        return f"violated {match.group(1)}" if match else "violated an action property"
+    if returncode == EXIT_LIVENESS:
+        names = ", ".join(temporal_properties(cfg_text)) or "unknown"
+        return f"liveness (properties: {names})"
+    return None
+
+
+def matches(expected, outcome):
+    if expected == "liveness":
+        return outcome.startswith("liveness")
+    return expected == outcome
+
+
+def parse_trace(output):
+    """Return (steps, back_to) from a TLC counterexample.
+
+    Each step is {"action", "state", "changed"}. The state maps a variable to its
+    parsed value. "changed" holds the new value of each variable that changed,
+    and for a function or a record only the keys that changed.
+    """
+    raw, label, values, name = [], None, {}, None
+    for line in output.splitlines():
+        header = re.match(r"^State (\d+): (.*)$", line)
+        if header:
+            if label is not None:
+                raw.append((label, values))
+            action = re.match(r"<(\w+)", header.group(2))
+            label, values, name = (action.group(1) if action else header.group(2)), {}, None
+            continue
+        if label is None:
+            continue
+        # TLC omits the leading conjunction when the spec has one variable.
+        assignment = re.match(r"^(?:/\\ )?(\w+) = (.*)$", line)
+        if assignment:
+            name = assignment.group(1)
+            values[name] = assignment.group(2)
+        elif line.strip() and name and not line.startswith(("Error", "Back to", "Finished", "The ")):
+            values[name] += " " + line.strip()
+        elif not line.strip():
+            name = None
+    if label is not None:
+        raw.append((label, values))
+
+    steps, state = [], {}
+    for label, values in raw:
+        parsed = {key: parse_value(text) for key, text in values.items()}
+        changed = {}
+        for key, new in parsed.items():
+            old = state.get(key)
+            if key not in state or old == new:
+                continue
+            if isinstance(old, dict) and isinstance(new, dict):
+                changed[key] = {k: v for k, v in new.items() if old.get(k) != v}
+            else:
+                changed[key] = new
+        action = "Initial" if label.startswith("<Initial") or label == "Initial" else label
+        state = {**state, **parsed}
+        steps.append({"action": action, "state": dict(state), "changed": changed})
+    back = re.search(r"^Back to state (\d+)", output, re.MULTILINE)
+    return steps, int(back.group(1)) if back else None
+
+
+def reduced_trace(output):
+    """Print a counterexample as one line per step, with only what changed."""
+    steps, back = parse_trace(output)
+    lines, previous = [], {}
+    for number, step in enumerate(steps, start=1):
+        if number == 1:
+            parts = [f"{key} = {show(value)}" for key, value in step["state"].items()]
+        else:
+            parts = []
+            for key, new in step["changed"].items():
+                old = previous.get(key)
+                if isinstance(old, dict) and isinstance(new, dict):
+                    parts += [f"{key}[{k}]: {show(old[k]) if k in old else 'absent'} -> {show(v)}" for k, v in new.items()]
+                else:
+                    parts.append(f"{key}: {show(old)} -> {show(new)}")
+        lines.append(f"  {number}. {step['action']}: {', '.join(parts) or 'no variable changed'}")
+        previous = step["state"]
+    if back:
+        lines.append(f"  The behaviour then returns to state {back} and repeats.")
+    return lines
+
+
+def main(argv):
+    flags = {flag for flag in ("--trace", "--json") if flag in argv}
+    args = [a for a in argv if a not in flags]
+    if not args or args[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if args else 2
+    spec = Path(args[0]).resolve()
+    if not spec.is_file():
+        print(f"usage: fv-tlc [--trace] [--json] <Spec.tla> [<Config.cfg> ...]\n{spec} is not a file", file=sys.stderr)
+        return 2
+    configs = [Path(a).resolve() for a in args[1:]] or sorted(spec.parent.glob("*.cfg"))
+    if not configs:
+        print(f"usage: no .cfg file beside {spec.name}", file=sys.stderr)
+        return 2
+
+    jar = fvlib.fv_home() / "tla2tools.jar"
+    if not jar.is_file():
+        print(f"UNAVAILABLE tla: {jar} is missing; run fv-install tla")
+        return 3
+    java = fvlib.find_java()
+    if java is None:
+        print(fvlib.JAVA_UNAVAILABLE)
+        return 3
+
+    results, lines = [], []
+    for cfg in configs:
+        result = {"config": cfg.name, "expected": None, "outcome": None, "verdict": "ERROR", "states": None, "trace": []}
+        results.append(result)
+        if not cfg.is_file():
+            lines.append(f"ERROR {cfg.name}: the config file does not exist")
+            continue
+        cfg_text = cfg.read_text()
+        expected = result["expected"] = expect_header(cfg_text)
+        if expected is None:
+            result["verdict"] = "FAIL"
+            lines.append(f"FAIL {cfg.name}: no expect header")
+            continue
+        code, output = fvlib.run_tlc(java, jar, ["-config", str(cfg), str(spec)], spec.parent)
+        outcome = result["outcome"] = outcome_of(code, output, cfg_text)
+        if outcome is None:
+            lines.append(f"ERROR {cfg.name}: TLC exited {code} without a verdict")
+            lines += ["  " + line for line in output.strip().splitlines()[-6:]]
+            continue
+        found = re.findall(r"(\d+) distinct states found", output)
+        result["states"] = int(found[-1]) if found else None
+        violated = outcome != "holds"
+        if violated:
+            result["trace"] = parse_trace(output)[0]
+        if matches(expected, outcome):
+            result["verdict"] = "PASS"
+            lines.append(f"PASS {cfg.name}: {outcome} ({found[-1] if found else '?'} distinct states)")
+            if violated and "--trace" in flags:
+                lines += reduced_trace(output)
+        else:
+            result["verdict"] = "FAIL"
+            lines.append(f"FAIL {cfg.name}: expected {expected}, got {outcome}")
+            if violated:
+                lines += reduced_trace(output)
+
+    print(json.dumps(results, indent=1) if "--json" in flags else "\n".join(lines))
+    return 0 if all(result["verdict"] == "PASS" for result in results) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

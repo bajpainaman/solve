@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Install Apalache, the symbolic model checker for TLA+, and verify it.
+#
+# Usage: apalache [--check]
+#
+# Installs the pinned release archive from apalache-mc/apalache under
+# $FV_HOME/apalache/, verified by SHA-256. --check reports the state and
+# installs nothing. Releases from 0.59.0 are compiled for JDK 21. The pin
+# below also runs on an older JDK, which the development machine has.
+#
+# Environment: FV_HOME (default ~/.cache/fv), JAVA (default java),
+# FV_APALACHE_URL (overrides the release URL, for tests).
+set -uo pipefail
+
+FV_HOME="${FV_HOME:-$HOME/.cache/fv}"
+JAVA="${JAVA:-java}"
+
+# To move a pin, change the version and the checksum together.
+VERSION=0.52.1
+SHA256=c539711703fd2550d8e065e486f0cbc8286846e14c16e92ef93ba3ece0149ef3
+URL="${FV_APALACHE_URL:-https://github.com/apalache-mc/apalache/releases/download/v$VERSION/apalache-$VERSION.tgz}"
+
+HOME_DIR="$FV_HOME/apalache"
+BIN="$HOME_DIR/bin/apalache-mc"
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+unavailable() {
+  echo "UNAVAILABLE apalache: $1"
+  exit 3
+}
+
+check_only=0
+[ "${1:-}" = "--check" ] && check_only=1
+
+"$JAVA" -version >/dev/null 2>&1 ||
+  unavailable "install a JDK 11 to 20 (Apalache $VERSION does not run on JDK 21+), or set JAVA to its java binary"
+
+if [ -x "$BIN" ]; then
+  echo "READY apalache $BIN"
+  exit 0
+fi
+
+[ "$check_only" = 1 ] && unavailable "not installed; run fv-install apalache"
+
+mkdir -p "$HOME_DIR"
+archive="$FV_HOME/apalache-$VERSION.tgz"
+if ! curl -fsSL -o "$archive.part" "$URL"; then
+  rm -f "$archive.part"
+  unavailable "the download from $URL failed"
+fi
+if [ "$(sha256 "$archive.part")" != "$SHA256" ]; then
+  rm -f "$archive.part"
+  unavailable "checksum of $URL differs from the pinned $SHA256"
+fi
+mv "$archive.part" "$archive"
+tar -xzf "$archive" -C "$HOME_DIR" --strip-components=1
+rm -f "$archive"
+chmod +x "$BIN"
+echo "READY apalache $BIN"

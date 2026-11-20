@@ -1,0 +1,9 @@
+# The same bug the good example's mutations file catches. This driver misses it.
+run node weak-run.cjs
+properties ConformsToMachine
+file checkout.cjs
+
+mutation setting the payment flag is dropped
+detects ConformsToMachine
+-       this.hasPayment = true;
++

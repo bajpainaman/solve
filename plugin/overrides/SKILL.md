@@ -15,11 +15,11 @@ the workflow needed for the request.
 
 ## Route once
 
-Sibling skills: when `../cdpi/SKILL.md` or `../impeccable/SKILL.md` exists beside
-this skill, send "how should this software be built" requests (architecture, API,
-protocol, PR review, rewrite vs extend) to cdpi and frontend design work to
-impeccable. In decide mode on an architecture choice, apply cdpi's `lens` card to
-each option as evidence. In the plugin, its top-level `ROUTING.md` already did this.
+Sibling skills: when `../skill-router/SKILL.md` exists beside this skill, it
+routes between solve, cdpi, impeccable and the testing, formal-verification, SDLC
+and PR-review toolkits. Send work that is mainly theirs there. In decide mode on
+an architecture choice, apply cdpi's `lens` card to each option as evidence, and
+use an fv-toolkit check of a design's "never" or "always" claim the same way.
 
 | Request | Mode | Read |
 |---|---|---|

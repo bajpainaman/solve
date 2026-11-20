@@ -1,0 +1,26 @@
+# Planted bugs for the tenant-isolation model. Each one must make the named check miss its expectation.
+run fv-alloy tenant-isolation.als
+properties NoCrossTenantRead_AllPathsTenantScoped NoCrossTenantRead_NoRule
+file tenant-isolation.als
+
+mutation the tenant predicate compares with the wrong operator and selects every other tenant's rows
+detects NoCrossTenantRead_AllPathsTenantScoped
+- fun visibleRows[p: Principal, q: QueryPath]: set Row {
+-   q in TenantScopedPath => { r: Row | r.tenant = p.tenant } else Row
+- }
++ fun visibleRows[p: Principal, q: QueryPath]: set Row {
++   q in TenantScopedPath => { r: Row | r.tenant != p.tenant } else Row
++ }
+
+mutation the router drops the principal's own tenant from what it may read
+detects NoCrossTenantRead_NoRule
+- fun visibleRows[p: Principal, q: QueryPath]: set Row {
+-   q in TenantScopedPath => { r: Row | r.tenant = p.tenant } else Row
+- }
++ fun visibleRows[p: Principal, q: QueryPath]: set Row {
++   q in TenantScopedPath => { r: Row | r.tenant = p.tenant } else none
++ }
+
+harmless a comment on TenantScopedPath is reworded
+- sig TenantScopedPath in QueryPath {}  -- paths whose SQL carries the tenant predicate
++ sig TenantScopedPath in QueryPath {}  -- the paths that filter by tenant_id

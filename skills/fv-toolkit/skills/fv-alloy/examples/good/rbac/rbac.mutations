@@ -1,0 +1,18 @@
+# Planted bugs for the RBAC model. Each one must make the named check miss its expectation.
+run fv-alloy rbac.als
+properties NoEscalationWhenAdminsHoldTheRole NoEscalationWhenAnyoneAdmins
+file rbac.als
+
+mutation holding any role is enough to administer every role
+detects NoEscalationWhenAdminsHoldTheRole
+- pred AdminsHoldTheRole { all u: User | u.admins in u.roles }
++ pred AdminsHoldTheRole { all u: User | some u.admins implies some u.roles }
+
+mutation held permissions also count the roles a user administers
+detects NoEscalationWhenAnyoneAdmins
+- fun held[u: User]: set Permission { u.roles.perms }
++ fun held[u: User]: set Permission { (u.roles + u.admins).perms }
+
+harmless a comment is reworded
+- -- What a user can hand to someone else by adding them to a role.
++ -- The permissions a user can hand to someone else through a role they administer.

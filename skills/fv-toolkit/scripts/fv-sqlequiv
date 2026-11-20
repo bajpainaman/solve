@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""Check two SQL queries for equivalence on every small table up to a bound.
+
+Usage: fv-sqlequiv <File.sql>
+
+The file holds one or more checks:
+
+  -- check: <Name>
+  -- expect: equivalent | different
+  -- schema
+  CREATE TABLE t (x INTEGER);
+  -- query_a
+  SELECT ...;
+  -- query_b
+  SELECT ...;
+
+'-- expect:' is optional and defaults to 'equivalent'. A rejected rewrite,
+one that is expected to disagree with the original so its README can show
+the counterexample, declares 'different'.
+
+For each check, the script builds every table that fits the schema with 0 to
+FV_SQLEQUIV_MAX_ROWS rows (default 2) per table, drawing each column's values
+from a small domain that always includes NULL: [1, 2, NULL] for an integer
+column, ['a', 'b', NULL] for a text column. It runs query_a and query_b on
+every such table (or combination of tables, for a schema with more than
+one) and compares the rows each returns, as a multiset.
+
+The script prints one line per check:
+
+  PASS check <name>: equivalent on N tables
+  PASS check <name>: different
+  FAIL check <name>: expected <outcome>, got <outcome>
+
+A 'different' outcome, declared or not, is followed by the first table the
+queries disagreed on, and both result sets.
+
+Exit codes: 0 every check's outcome matches what it declared, 1 on a FAIL or
+an ERROR, 2 on a usage error, 3 when this Python has no sqlite3 module.
+
+Environment: FV_SQLEQUIV_MAX_ROWS (default 2).
+
+What this does not cover: anything outside the bound (a table with more
+rows, or a value outside the small domain), window functions and
+correlated subqueries beyond what SQLite's own query planner handles, and
+any SQL dialect SQLite does not implement.
+"""
+import itertools
+import os
+import re
+import sys
+from pathlib import Path
+
+try:
+    import sqlite3
+except ImportError:
+    print("UNAVAILABLE sqlequiv: this Python has no sqlite3 module; install one that does")
+    sys.exit(3)
+
+CHECK = re.compile(r"^--\s*check:\s*(\S+)\s*$")
+EXPECT = re.compile(r"^--\s*expect:\s*(equivalent|different)\s*$")
+SECTION = re.compile(r"^--\s*(schema|query_a|query_b)\s*$")
+
+DOMAINS = {
+    "INT": [1, 2, None],
+    "TEXT": ["a", "b", None],
+    "CHAR": ["a", "b", None],
+}
+DEFAULT_DOMAIN = [1, 2, None]
+
+
+def domain_for(column_type):
+    upper = (column_type or "").upper()
+    for key, domain in DOMAINS.items():
+        if key in upper:
+            return domain
+    return DEFAULT_DOMAIN
+
+
+def parse_checks(text):
+    """Return [(name, expected, schema_sql, query_a, query_b)] in file order."""
+    checks = []
+    name, expected, sections, current = None, "equivalent", None, None
+
+    def flush():
+        if name is not None:
+            checks.append((name, expected, sections["schema"], sections["query_a"], sections["query_b"]))
+
+    for line in text.splitlines():
+        check_match = CHECK.match(line.strip())
+        expect_match = EXPECT.match(line.strip())
+        section_match = SECTION.match(line.strip())
+        if check_match:
+            flush()
+            name, expected = check_match.group(1), "equivalent"
+            sections, current = {"schema": "", "query_a": "", "query_b": ""}, None
+        elif expect_match:
+            expected = expect_match.group(1)
+        elif section_match:
+            current = section_match.group(1)
+        elif current and name is not None:
+            sections[current] += line + "\n"
+    flush()
+    return checks
+
+
+def table_columns(schema_sql):
+    """Return {table name: [(column name, declared type), ...]} in creation order."""
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(schema_sql)
+    tables = [row[0] for row in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY rowid"
+    )]
+    columns = {}
+    for table in tables:
+        columns[table] = [(row[1], row[2]) for row in conn.execute(f"PRAGMA table_info({table})")]
+    conn.close()
+    return columns
+
+
+def table_instances(columns, max_rows):
+    """Yield every table instance (a list of row tuples) up to max_rows, in a fixed order."""
+    domains = [domain_for(col_type) for _, col_type in columns]
+    possible_rows = list(itertools.product(*domains)) if domains else [()]
+    for row_count in range(max_rows + 1):
+        yield from itertools.product(possible_rows, repeat=row_count)
+
+
+def sort_key(row):
+    # None has no order relative to other Python types, so sort on
+    # (is_none, value) per column instead of the raw value.
+    return tuple((value is None, value) for value in row)
+
+
+def run_query(conn, sql):
+    return sorted((tuple(row) for row in conn.execute(sql)), key=sort_key)
+
+
+def check_equivalence(name, expected, schema_sql, query_a, query_b, max_rows):
+    columns = table_columns(schema_sql)
+    if not columns:
+        return False, f"ERROR {name}: the schema declared no tables"
+
+    per_table = {table: list(table_instances(cols, max_rows)) for table, cols in columns.items()}
+    tables = list(per_table)
+    total = 0
+    for combo in itertools.product(*(per_table[t] for t in tables)):
+        total += 1
+        conn = sqlite3.connect(":memory:")
+        conn.executescript(schema_sql)
+        for table, rows in zip(tables, combo):
+            cols = [c for c, _ in columns[table]]
+            placeholders = ", ".join("?" * len(cols))
+            conn.executemany(f"INSERT INTO {table} VALUES ({placeholders})", rows)
+        try:
+            rows_a = run_query(conn, query_a)
+            rows_b = run_query(conn, query_b)
+        except sqlite3.Error as error:
+            conn.close()
+            return False, f"ERROR {name}: {error}"
+        conn.close()
+        if rows_a != rows_b:
+            lines = [f"FAIL check {name}: expected {expected}, got different"] if expected != "different" else [f"PASS check {name}: different"]
+            for table, rows in zip(tables, combo):
+                lines.append(f"  table {table}: {rows}")
+            lines.append(f"  query_a -> {rows_a}")
+            lines.append(f"  query_b -> {rows_b}")
+            return expected == "different", "\n".join(lines)
+    if expected == "different":
+        return False, f"FAIL check {name}: expected different, got equivalent on {total} tables"
+    return True, f"PASS check {name}: equivalent on {total} tables"
+
+
+def main(argv):
+    if len(argv) != 1 or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
+    path = Path(argv[0])
+    if not path.is_file():
+        print(f"usage: fv-sqlequiv <File.sql>\n{path} is not a file", file=sys.stderr)
+        return 2
+
+    max_rows = int(os.environ.get("FV_SQLEQUIV_MAX_ROWS", "2"))
+    checks = parse_checks(path.read_text())
+    if not checks:
+        print(f"ERROR {path.name}: no '-- check: <Name>' section found")
+        return 1
+
+    failed = False
+    for name, expected, schema_sql, query_a, query_b in checks:
+        ok, message = check_equivalence(name, expected, schema_sql, query_a, query_b, max_rows)
+        print(message)
+        failed = failed or not ok
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

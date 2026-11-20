@@ -1,0 +1,14 @@
+# Planted bugs for the cluster-majority design. Each one must make its
+# property fail.
+run fv-tlc LeaderElection.tla ClusterMajority.cfg WitnessLeader.cfg
+properties AtMostOneLeaderPerTerm
+file LeaderElection.tla
+
+mutation a candidate counts only the votes it can see, not the whole cluster
+detects AtMostOneLeaderPerTerm
+-     /\ 2 * Cardinality(VotesFor(candidate)) > Cardinality(Node)
++     /\ 2 * Cardinality(VotesFor(candidate) \cap Reachable(candidate)) > Cardinality(Reachable(candidate))
+
+harmless a comment on the cluster-majority rule
+- \* Source: node.become_leader(), counting votes against the whole cluster.
++ \* Source: node.become_leader(). It counts votes against the whole cluster.

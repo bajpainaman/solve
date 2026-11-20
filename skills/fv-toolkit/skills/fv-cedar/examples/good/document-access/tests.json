@@ -1,0 +1,190 @@
+[
+  {
+    "name": "alice_allowed_normal_same_department",
+    "request": {
+      "principal": "User::\"alice\"",
+      "action": "Action::\"viewDocument\"",
+      "resource": "Document::\"d1\"",
+      "context": {}
+    },
+    "entities": [
+      {
+        "uid": {
+          "type": "User",
+          "id": "alice"
+        },
+        "attrs": {
+          "department": "eng",
+          "clearance": "low"
+        },
+        "parents": []
+      },
+      {
+        "uid": {
+          "type": "Document",
+          "id": "d1"
+        },
+        "attrs": {
+          "owningDepartment": "eng",
+          "classification": "normal"
+        },
+        "parents": []
+      }
+    ],
+    "decision": "allow",
+    "reason": [
+      "policy0"
+    ],
+    "num_errors": 0
+  },
+  {
+    "name": "alice_denied_secret_low_clearance",
+    "request": {
+      "principal": "User::\"alice\"",
+      "action": "Action::\"viewDocument\"",
+      "resource": "Document::\"d2\"",
+      "context": {}
+    },
+    "entities": [
+      {
+        "uid": {
+          "type": "User",
+          "id": "alice"
+        },
+        "attrs": {
+          "department": "eng",
+          "clearance": "low"
+        },
+        "parents": []
+      },
+      {
+        "uid": {
+          "type": "Document",
+          "id": "d2"
+        },
+        "attrs": {
+          "owningDepartment": "eng",
+          "classification": "secret"
+        },
+        "parents": []
+      }
+    ],
+    "decision": "deny",
+    "reason": [
+      "policy1"
+    ],
+    "num_errors": 0
+  },
+  {
+    "name": "bob_allowed_secret_high_clearance",
+    "request": {
+      "principal": "User::\"bob\"",
+      "action": "Action::\"viewDocument\"",
+      "resource": "Document::\"d2\"",
+      "context": {}
+    },
+    "entities": [
+      {
+        "uid": {
+          "type": "User",
+          "id": "bob"
+        },
+        "attrs": {
+          "department": "eng",
+          "clearance": "high"
+        },
+        "parents": []
+      },
+      {
+        "uid": {
+          "type": "Document",
+          "id": "d2"
+        },
+        "attrs": {
+          "owningDepartment": "eng",
+          "classification": "secret"
+        },
+        "parents": []
+      }
+    ],
+    "decision": "allow",
+    "reason": [
+      "policy0"
+    ],
+    "num_errors": 0
+  },
+  {
+    "name": "carol_denied_normal_different_department",
+    "request": {
+      "principal": "User::\"carol\"",
+      "action": "Action::\"viewDocument\"",
+      "resource": "Document::\"d1\"",
+      "context": {}
+    },
+    "entities": [
+      {
+        "uid": {
+          "type": "User",
+          "id": "carol"
+        },
+        "attrs": {
+          "department": "sales",
+          "clearance": "low"
+        },
+        "parents": []
+      },
+      {
+        "uid": {
+          "type": "Document",
+          "id": "d1"
+        },
+        "attrs": {
+          "owningDepartment": "eng",
+          "classification": "normal"
+        },
+        "parents": []
+      }
+    ],
+    "decision": "deny",
+    "reason": [],
+    "num_errors": 0
+  },
+  {
+    "name": "dave_denied_secret_medium_clearance",
+    "request": {
+      "principal": "User::\"dave\"",
+      "action": "Action::\"viewDocument\"",
+      "resource": "Document::\"d3\"",
+      "context": {}
+    },
+    "entities": [
+      {
+        "uid": {
+          "type": "User",
+          "id": "dave"
+        },
+        "attrs": {
+          "department": "eng",
+          "clearance": "medium"
+        },
+        "parents": []
+      },
+      {
+        "uid": {
+          "type": "Document",
+          "id": "d3"
+        },
+        "attrs": {
+          "owningDepartment": "eng",
+          "classification": "secret"
+        },
+        "parents": []
+      }
+    ],
+    "decision": "deny",
+    "reason": [
+      "policy1"
+    ],
+    "num_errors": 0
+  }
+]

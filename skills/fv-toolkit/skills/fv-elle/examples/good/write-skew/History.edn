@@ -1,0 +1,20 @@
+;; Source read at: 0000000
+;; Covers: cart/service.py
+;; The header shows the form of a sync record. This example describes no
+;; real repository, so the commit is a placeholder.
+;;
+;; expect: invalid G2-item
+;; model: list-append
+;; consistency-models: strict-serializable
+;; anomalies: G0,G1a,G1b,G1c,G-single,G-single-process,G-single-realtime,G2-item
+;;
+;; Two carts, keyed 1 and 2, start empty. Process 0 adds item 10 to cart 1
+;; and reads cart 2 as empty. Process 1 adds item 20 to cart 2 and reads
+;; cart 1 as empty, concurrently. Each process observes the other's cart
+;; before that cart's append, so cart 1's append must come after process
+;; 1's read, and cart 2's append must come after process 0's read. No
+;; order of the two transactions satisfies both at once: a write skew.
+{:index 0, :type :invoke, :process 0, :value [[:append 1 10] [:r 2 nil]]}
+{:index 1, :type :ok,     :process 0, :value [[:append 1 10] [:r 2 []]]}
+{:index 2, :type :invoke, :process 1, :value [[:append 2 20] [:r 1 nil]]}
+{:index 3, :type :ok,     :process 1, :value [[:append 2 20] [:r 1 []]]}

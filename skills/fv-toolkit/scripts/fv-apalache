@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""Run Apalache on each check and compare the outcome with the check's expect header.
+
+Usage: fv-apalache [--trace] <Spec.tla> [<Check.icfg> ...]
+
+With no check, every .icfg file beside the spec runs. Each check names the
+operators of one verification condition and declares the outcome it must
+produce, on comment lines:
+
+  \\* expect: holds                  Apalache finds no error up to LENGTH steps
+  \\* expect: violated <Invariant>   Apalache reports that this invariant is violated
+  INIT <op>                         the operator that constrains the first state
+  NEXT <op>                         optional, default Next
+  INV <op>                          the invariant to check
+  LENGTH <n>                        how many NEXT steps to take, default 0
+
+Setting INIT to an invariant's own name, rather than to the spec's Init,
+turns the check into an inductive step: Apalache starts from any state that
+satisfies the invariant, not only a reachable one, so a counterexample here
+means the invariant is not inductive, even if it holds on every state TLC
+can reach from the real Init.
+
+The script prints one line per check:
+
+  PASS <check>: <outcome>
+  FAIL <check>: expected <header>, got <outcome>
+  ERROR <check>: <reason>            Apalache could not check the spec
+
+A FAIL on a violation is followed by the counterexample Apalache printed.
+--trace prints that trace for every violation, including the ones a header
+expects.
+
+Exit codes: 0 when every check passes, 1 on a FAIL or an ERROR, 2 on a usage
+error, and 3 when Java or the Apalache jar is missing. Exit 3 means the spec
+was not checked, so never report it as a pass or as a failure of the model.
+
+Environment: FV_HOME (default ~/.cache/fv), JAVA (default java).
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+KEYWORDS = {"INIT", "NEXT", "INV", "LENGTH"}
+
+
+def expect_header(text):
+    """Return the text after 'expect:' on the first header line, or None."""
+    match = re.search(r"^\s*\\\*\s*expect:\s*(.+?)\s*$", text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def declared(text):
+    """Return the INIT, NEXT, INV and LENGTH of one check, as a dict."""
+    values = {"NEXT": "Next", "LENGTH": "0"}
+    for line in text.splitlines():
+        tokens = line.split("\\*")[0].split()
+        if tokens and tokens[0] in KEYWORDS:
+            values[tokens[0]] = tokens[1]
+    return values
+
+
+def outcome_of(returncode, output):
+    """Map an apalache-mc run to an outcome string, or to None when it did not check."""
+    if "EXITCODE: OK" in output:
+        return "holds"
+    if re.search(r"invariant \d+ violated", output):
+        return "violated"
+    return None
+
+
+def trace(out_dir):
+    """Return the counterexample, read from the MCviolation*.out apalache-mc writes.
+
+    Apalache never prints the trace to stdout; it writes one state per
+    STARTMSG/ENDMSG block to this file and prints the file's path instead.
+    """
+    violations = sorted(Path(out_dir).rglob("MCviolation*.out"))
+    if not violations:
+        return []
+    lines = []
+    for line in violations[0].read_text().splitlines():
+        if re.match(r"^\d+: <", line):
+            if lines:
+                lines.append("")
+            lines.append("  " + line)
+        elif line.startswith("/\\"):
+            lines.append("  " + line)
+    return lines
+
+
+def main(argv):
+    args = [a for a in argv if a != "--trace"]
+    show_all_traces = len(args) != len(argv)
+    if not args or args[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if args else 2
+    spec = Path(args[0]).resolve()
+    if not spec.is_file():
+        print(f"usage: fv-apalache [--trace] <Spec.tla> [<Check.icfg> ...]\n{spec} is not a file", file=sys.stderr)
+        return 2
+    checks = [Path(a).resolve() for a in args[1:]] or sorted(spec.parent.glob("*.icfg"))
+    if not checks:
+        print(f"usage: no .icfg file beside {spec.name}", file=sys.stderr)
+        return 2
+
+    java = os.environ.get("JAVA", "java")
+    mc = Path(os.environ.get("FV_HOME", Path.home() / ".cache" / "fv")) / "apalache" / "bin" / "apalache-mc"
+    if not mc.is_file():
+        print(f"UNAVAILABLE apalache: {mc} is missing; run fv-install apalache")
+        return 3
+    if not shutil.which(java):
+        print(f"UNAVAILABLE java: {java} is not on PATH; install a JDK 11 to 20 or set JAVA")
+        return 3
+
+    failed = False
+    for check in checks:
+        if not check.is_file():
+            print(f"ERROR {check.name}: the check file does not exist")
+            failed = True
+            continue
+        text = check.read_text()
+        expected = expect_header(text)
+        if expected is None:
+            print(f"FAIL {check.name}: no expect header")
+            failed = True
+            continue
+        values = declared(text)
+        if "INIT" not in values or "INV" not in values:
+            print(f"ERROR {check.name}: missing INIT or INV")
+            failed = True
+            continue
+        with tempfile.TemporaryDirectory(prefix="fv-apalache-") as out_dir:
+            run = subprocess.run(
+                [str(mc), "check", f"--init={values['INIT']}", f"--next={values['NEXT']}",
+                 f"--inv={values['INV']}", f"--length={values['LENGTH']}",
+                 f"--out-dir={out_dir}", str(spec)],
+                cwd=spec.parent, capture_output=True, text=True,
+            )
+            output = run.stdout + run.stderr
+            outcome = outcome_of(run.returncode, output)
+            if outcome is None:
+                print(f"ERROR {check.name}: apalache-mc exited {run.returncode} without a verdict")
+                error_lines = [line for line in output.splitlines() if re.search(r"\bE@", line)]
+                print("\n".join("  " + line for line in (error_lines or output.strip().splitlines()[-6:])))
+                failed = True
+                continue
+            violated = outcome == "violated"
+            reported = f"violated {values['INV']}" if violated else "holds"
+            if (expected == "holds" and not violated) or (expected != "holds" and violated):
+                print(f"PASS {check.name}: {reported}")
+                if violated and show_all_traces:
+                    print("\n".join(trace(out_dir)))
+            else:
+                print(f"FAIL {check.name}: expected {expected}, got {reported}")
+                if violated:
+                    print("\n".join(trace(out_dir)))
+                failed = True
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

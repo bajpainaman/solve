@@ -1,0 +1,20 @@
+# Planted bugs in the chosen design. Each one must make Authentication
+# miss its declared expectation of verified.
+run fv-tamarin challenge.spthy
+properties Authentication
+file challenge.spthy
+
+mutation the server stops checking that the signature covers the nonce
+detects Authentication
+-   --[ Eq(verify(sig, ~n, pkA), true), Accept($S, $A, ~n) ]->
++  --[ Eq(verify(sig, 'ok', pkA), true), Accept($S, $A, ~n) ]->
+
+mutation the equality restriction is dropped, so Eq no longer constrains anything
+detects Authentication
+- restriction Equality:
+-   "All x y #i. Eq(x,y) @ i ==> x = y"
++
+
+harmless a rule comment is reworded
+- // The client signs the nonce it was sent.
++ // The client signs whatever nonce the In fact carries.

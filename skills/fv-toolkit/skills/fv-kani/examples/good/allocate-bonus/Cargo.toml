@@ -1,0 +1,9 @@
+[package]
+name = "fv-kani-allocate-bonus"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "allocate_bonus"
+path = "src/lib.rs"

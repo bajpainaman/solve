@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Pin the properties that the user confirmed, and report when one of them changes.
+
+Usage: fv-pin write <dir> <target>...
+       fv-pin check <dir>
+
+A check can be made to pass by weakening the property it checks. After the
+user confirms the property ledger, `write` records a SHA-256 for each target in
+<dir>/properties.pins. `check` then reports every target whose text changed.
+Run `write` again only when the user agreed to the change.
+
+A target is a path relative to <dir>, with an optional name:
+
+  Holds.cfg               the whole file, such as a config with its declared outcome
+  Counter.tla:Bounded     the definition of Bounded in that file
+
+A named definition starts at the line that defines the name: `Name ==` in
+TLA+, `assert Name`, `pred Name` or `fun Name` in Alloy, `def name` in Python.
+It ends before the next line that starts at the left margin, so an edit
+elsewhere in the model leaves the pin unchanged.
+
+`check` prints one line per target:
+
+  OK <target>
+  CHANGED <target>          the pinned text is different now
+  MISSING <target>          the file or the definition is gone
+  NO RECORD <dir>: ...      the directory has no properties.pins
+
+Exit codes: 0 when every target is OK, 1 otherwise, 2 on a usage error.
+"""
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+PINS = "properties.pins"
+
+
+def block(text, name):
+    """Return the definition of `name`, or None when the text does not define it."""
+    start = re.compile(rf"^(?:(?:assert|pred|fun|def|async\s+def)\s+)?{re.escape(name)}\b")
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if not start.match(line):
+            continue
+        end = index + 1
+        while end < len(lines) and (not lines[end].strip() or lines[end][0] in " \t})"):
+            end += 1
+        return "\n".join(lines[index:end]).rstrip()
+    return None
+
+
+def digest(directory, target):
+    """Return the SHA-256 of a target's text, or None when the target is gone."""
+    path, _, name = target.partition(":")
+    file = directory / path
+    if not file.is_file():
+        return None
+    text = file.read_text() if not name else block(file.read_text(), name)
+    return None if text is None else hashlib.sha256(text.encode()).hexdigest()
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if argv else 2
+    if len(argv) < 2 or argv[0] not in ("write", "check") or (argv[0] == "write" and len(argv) < 3):
+        print("usage: fv-pin write <dir> <target>... | fv-pin check <dir>", file=sys.stderr)
+        return 2
+    directory = Path(argv[1]).resolve()
+    if not directory.is_dir():
+        print(f"usage: {directory} is not a directory", file=sys.stderr)
+        return 2
+    manifest = directory / PINS
+
+    if argv[0] == "write":
+        rows = []
+        for target in argv[2:]:
+            value = digest(directory, target)
+            if value is None:
+                path, _, name = target.partition(":")
+                reason = f"{path} does not define {name}" if name and (directory / path).is_file() else f"{path} is not a file"
+                print(f"usage: {reason}", file=sys.stderr)
+                return 2
+            rows.append(f"{value}  {target}")
+        manifest.write_text("\n".join(rows) + "\n")
+        print(f"PINNED {len(rows)} targets in {manifest}")
+        return 0
+
+    if not manifest.is_file():
+        print(f"NO RECORD {directory}: no {PINS}; run fv-pin write after the user confirms the properties")
+        return 1
+    changed = False
+    for row in manifest.read_text().splitlines():
+        if not row.strip():
+            continue
+        pinned, target = row.split(None, 1)
+        now = digest(directory, target)
+        verdict = "MISSING" if now is None else "OK" if now == pinned else "CHANGED"
+        print(f"{verdict} {target}")
+        changed = changed or verdict != "OK"
+    return 1 if changed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

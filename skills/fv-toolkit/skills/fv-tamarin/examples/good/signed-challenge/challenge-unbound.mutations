@@ -1,0 +1,15 @@
+# Planted bugs in the rejected design. Each one must make Authentication
+# miss its declared expectation of falsified, by fixing the vulnerability
+# this design exists to show.
+run fv-tamarin challenge-unbound.spthy
+properties Authentication
+file challenge-unbound.spthy
+
+mutation the server is accidentally fixed to check the nonce after all
+detects Authentication
+-   --[ Eq(verify(sig, 'ok', pkA), true), Accept($S, $A, ~n) ]->
++  --[ Eq(verify(sig, ~n, pkA), true), Accept($S, $A, ~n) ]->
+
+harmless a rule comment is reworded
+- // The client signs a fixed value, never the challenge it was sent.
++ // The client's signature never covers the challenge it answers.

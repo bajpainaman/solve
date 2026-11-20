@@ -1,0 +1,23 @@
+# Planted bugs for the one-transaction design. Each one must make its property fail.
+run fv-tlc TransactionalOutbox.tla OneTransaction.cfg WitnessDuplicateDelivery.cfg
+properties NoEventWithoutCommit AtMostOnceApplied EventuallyApplied
+file TransactionalOutbox.tla
+
+mutation the one-transaction write marks the outbox row without committing the business row
+detects NoEventWithoutCommit
+-     /\ committed' = TRUE /\ outboxWritten' = TRUE
++     /\ committed' = committed /\ outboxWritten' = TRUE
+
+mutation the consumer applies the effect without checking its dedup key
+detects AtMostOnceApplied
+-     /\ applied' = IF ConsumerDedup /\ applied >= 1 THEN applied ELSE applied + 1
++     /\ applied' = applied + 1
+
+mutation a crash after the relay publishes gives up instead of retrying
+detects EventuallyApplied
+-     ELSE IF ~outboxMarked THEN "outbox_written_pending_relay"
++     ELSE IF ~outboxMarked THEN "done"
+
+harmless a comment on the resume point
+- \* The point the process resumes at, decided by what it wrote durably.
++ \* The point the process resumes at, decided only by what it wrote durably.

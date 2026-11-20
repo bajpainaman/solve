@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Run every command of an Alloy model and compare each result with its expectation.
+
+Usage: fv-alloy [--show] <Model.als>
+
+A command states its expectation with Alloy's own 'expect' clause:
+
+  run hasEdge for 3 expect 1          an instance must exist (SAT)
+  check NoSelfLoop for 4 expect 0     no counterexample may exist (UNSAT)
+
+A command without the clause gets the default: a run must be SAT and a check
+must be UNSAT. Write each command on one line, so the script can align the
+commands with the analyzer's results.
+
+The script prints one line per command:
+
+  PASS check <name>: UNSAT
+  FAIL check <name>: expected UNSAT, got SAT
+
+An unexpected SAT is followed by the instance or counterexample. --show prints
+it for every SAT result.
+
+A model with a check and no run fails. When the facts of a model contradict
+each other, no instance exists and every check passes, and a satisfiable run is
+the command that exposes that.
+
+Exit codes: 0 when every command passes, 1 on a FAIL or an ERROR, 2 on a usage
+error, and 3 when Java or the Alloy jar is missing. Exit 3 means the model was
+not checked.
+
+Environment: FV_HOME (default ~/.cache/fv), JAVA (default: the first java that runs).
+"""
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+sys.dont_write_bytecode = True  # Keep __pycache__ out of the installed plugin.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fvlib  # noqa: E402
+
+COMMAND = re.compile(r"^\s*(?:\w+\s*:\s*)?(run|check)\b(.*)$")
+# Alloy 6.2.0 appends "expects=<n>" to a result that misses its expect clause, and exits 1.
+RESULT = re.compile(r"^\s*\d+\.\s+(run|check)\s+(\S+)\s.*?\b(UNSAT|SAT)\b(?:\s+expects=\d)?\s*$")
+
+
+def declared_commands(source):
+    """Return (kind, expected result) for each command, in file order."""
+    commands = []
+    for line in source.splitlines():
+        match = COMMAND.match(line.split("--")[0].split("//")[0])
+        if not match:
+            continue
+        kind, rest = match.groups()
+        clause = re.search(r"\bexpect\s+([01])\b", rest)
+        if clause:
+            expected = "SAT" if clause.group(1) == "1" else "UNSAT"
+        else:
+            expected = "SAT" if kind == "run" else "UNSAT"
+        commands.append((kind, expected))
+    return commands
+
+
+def main(argv):
+    args = [a for a in argv if a != "--show"]
+    show_all = len(args) != len(argv)
+    if len(args) != 1 or args[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if args and args[0] in ("-h", "--help") else 2
+    model = Path(args[0]).resolve()
+    if not model.is_file():
+        print(f"usage: fv-alloy [--show] <Model.als>\n{model} is not a file", file=sys.stderr)
+        return 2
+
+    jar = fvlib.fv_home() / "alloy.jar"
+    if not jar.is_file():
+        print(f"UNAVAILABLE alloy: {jar} is missing; run fv-install alloy")
+        return 3
+    java = fvlib.find_java()
+    if java is None:
+        print(fvlib.JAVA_UNAVAILABLE)
+        return 3
+
+    commands = declared_commands(model.read_text())
+    with tempfile.TemporaryDirectory(prefix="fv-alloy-") as out:
+        run = subprocess.run(
+            [java, "-Djava.awt.headless=true", "-jar", str(jar), "exec",
+             "-f", "-o", out, "-t", "text", str(model)],
+            capture_output=True, text=True,
+        )
+        output = run.stdout + run.stderr
+        results = [m.groups() for m in map(RESULT.match, output.splitlines()) if m]
+        if not results or len(results) != len(commands):
+            print(f"ERROR {model.name}: the analyzer reported {len(results)} results "
+                  f"for {len(commands)} commands (exit {run.returncode})")
+            # The analyzer prints its message first and a Java stack trace after it.
+            message = [line for line in output.strip().splitlines() if not line.strip().startswith("at ")]
+            print("\n".join("  " + line for line in message[:6]))
+            return 1
+
+        failed = False
+        if any(kind == "check" for kind, _ in commands) and not any(kind == "run" for kind, _ in commands):
+            print(f"FAIL {model.name}: no run command, so the checks may pass on a model with no instance")
+            failed = True
+        for (kind, name, got), (_, expected) in zip(results, commands):
+            passed = got == expected
+            print(f"{'PASS' if passed else 'FAIL'} {kind} {name}: "
+                  + (got if passed else f"expected {expected}, got {got}"))
+            failed = failed or not passed
+            if got == "SAT" and (show_all or not passed):
+                for solution in sorted(Path(out).glob(f"{name}-solution-*.txt"))[:1]:
+                    lines = solution.read_text().splitlines()
+                    # The model's own relations are the part a reader maps back to the system.
+                    relations = [line for line in lines if line.startswith(("this/", "skolem"))]
+                    print("\n".join("  " + line for line in (relations or lines)[:60]))
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

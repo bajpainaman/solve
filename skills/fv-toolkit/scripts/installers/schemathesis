@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Installer for schemathesis, run through an isolated uv environment.
+#
+# Usage: scripts/installers/schemathesis [--check]
+#
+# With no argument, it primes the uv cache for the pinned schemathesis and
+# pytest and prints "READY schemathesis <version>". --check asks uv to
+# resolve the pin offline, so it reports the state without downloading
+# anything.
+set -uo pipefail
+
+PIN="schemathesis==4.33.4"
+PYTEST_PIN="pytest==9.2.0"
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "UNAVAILABLE schemathesis: uv is not on PATH; install uv (https://docs.astral.sh/uv/)"
+  exit 3
+fi
+
+if [ "${1:-}" = "--check" ]; then
+  if version=$(uv run --quiet --no-project --offline --with "$PIN" --with "$PYTEST_PIN" python -c "import schemathesis; print(schemathesis.SCHEMATHESIS_VERSION)" 2>/dev/null); then
+    echo "READY schemathesis $version"
+    exit 0
+  fi
+  echo "UNAVAILABLE schemathesis: not installed; run fv-install schemathesis"
+  exit 3
+fi
+
+if ! version=$(uv run --quiet --no-project --with "$PIN" --with "$PYTEST_PIN" python -c "import schemathesis; print(schemathesis.SCHEMATHESIS_VERSION)" 2>&1); then
+  echo "UNAVAILABLE schemathesis: uv could not install $PIN: $(echo "$version" | tail -1)"
+  exit 3
+fi
+echo "READY schemathesis $version"

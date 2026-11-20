@@ -1,0 +1,3 @@
+check SplitEvenlyHoldsItsContract money.split_evenly expect holds
+diff RefactorPreservesOutput money.split_evenly money.split_evenly_refactored expect holds
+diff RejectedDesignPutsExtraCentsLast money.split_evenly money.split_evenly_rejected expect differs

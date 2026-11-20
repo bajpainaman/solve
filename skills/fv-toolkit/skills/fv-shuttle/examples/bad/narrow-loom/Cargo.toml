@@ -1,0 +1,15 @@
+[package]
+name = "fv-shuttle-narrow-loom"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "narrow_loom"
+path = "src/lib.rs"
+
+[dev-dependencies]
+loom = "=0.7.3"
+
+[lints.rust]
+unexpected_cfgs = "allow"

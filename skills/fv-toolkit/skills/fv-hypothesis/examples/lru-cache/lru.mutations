@@ -1,0 +1,24 @@
+# Planted bugs in LRUCache. The state machine must catch each one.
+run python -m pytest -q -p no:cacheprovider test_lru.py
+properties TestLRU
+file lru.py
+
+mutation a read does not refresh the entry
+detects TestLRU
+-         self._items.move_to_end(key)
+-         return self._items[key]
++         return self._items[key]
+
+mutation the cache evicts the newest entry
+detects TestLRU
+-             self._items.popitem(last=False)
++             self._items.popitem(last=True)
+
+mutation the cache holds one entry too many
+detects TestLRU
+-         if len(self._items) > self.capacity:
++         if len(self._items) > self.capacity + 1:
+
+harmless the docstring is reworded
+-     """Keep at most `capacity` entries and evict the one that was used longest ago."""
++     """Hold at most `capacity` entries. The entry that was used longest ago is evicted first."""

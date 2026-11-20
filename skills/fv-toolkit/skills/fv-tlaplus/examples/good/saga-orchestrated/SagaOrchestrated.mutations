@@ -1,0 +1,23 @@
+# Planted bugs for the confirmed design. Each one must make its property fail.
+run fv-tlc SagaOrchestrated.tla ConfirmedCompensate.cfg WitnessSkipCompensation.cfg
+properties CompensateImpliesRan SettledEffectIsFinal EventuallyDone
+file SagaOrchestrated.tla
+
+mutation confirm-and-settle compensates without checking whether the effect landed
+detects CompensateImpliesRan
+-     /\ compensated' = effectB
++     /\ compensated' = TRUE
+
+mutation confirm-and-settle decides without fencing the step first
+detects SettledEffectIsFinal
+-     /\ fenced' = TRUE
++     /\ fenced' = FALSE
+
+mutation a saga that times out can never reach an end state
+detects EventuallyDone
+-     /\ pc' = "timed_out"
++     /\ pc' = "b_inflight"
+
+harmless a comment on the fencing step
+- \* the step before deciding, so no later attempt can still land.
++ \* the step before deciding, so no later attempt lands.

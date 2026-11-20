@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Stateright is a dev-dependency of each example crate, pinned in that
+# crate's own Cargo.lock. This installer has no jar or binary of its own to
+# fetch; it only confirms that cargo can build and run a crate, because cargo
+# fetches and pins the crate itself on the first `cargo test`.
+#
+# Usage: stateright [--check]
+#
+# Prints READY stateright <cargo path> (<cargo version>), or UNAVAILABLE and
+# exits 3 when cargo is missing. --check runs the same confirmation; there is
+# nothing to install either way, so it changes nothing.
+set -uo pipefail
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "UNAVAILABLE stateright: install Rust's cargo (https://rustup.rs, or your package manager)"
+  exit 3
+fi
+echo "READY stateright $(command -v cargo) ($(cargo --version))"

@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""Run tamarin-prover on a theory and compare each lemma with its expectation.
+
+Usage: fv-tamarin <Theory.spthy>
+
+A lemma states its expectation with a line comment directly above it:
+
+  // expect: verified
+  lemma Authentication:
+      "..."
+
+  // expect: falsified
+  lemma AuthenticationUnbound:
+      "..."
+
+Write the comment on its own line, directly above the 'lemma' line, with no
+blank line between them. A lemma with no 'expect:' comment is skipped.
+
+The script prints one line per declared lemma:
+
+  PASS check <name>: <outcome>
+  FAIL check <name>: expected <outcome>, got <outcome>
+
+tamarin-prover's own "summary of summaries" reports an outcome of 'verified'
+or 'falsified - found trace (N steps)'; this script compares only the first
+word, 'verified' or 'falsified'.
+
+Exit codes: 0 when every declared lemma matches its expectation, 1 on a FAIL
+or an ERROR, 2 on a usage error, 3 when tamarin-prover or maude is missing.
+
+Environment: FV_HOME (default ~/.cache/fv), FV_TAMARIN_TIMEOUT in seconds
+(default 300).
+"""
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+EXPECT = re.compile(r"^\s*//\s*expect:\s*(\S+)\s*$")
+LEMMA = re.compile(r"^\s*lemma\s+(\w+)\s*:")
+SUMMARY_START = re.compile(r"^summary of summaries:\s*$")
+SUMMARY_LINE = re.compile(r"^\s*(\w+)\s*\([^)]*\):\s*(\S+)")
+
+
+def declared_lemmas(source):
+    """Return [(lemma name, expected outcome)] in file order."""
+    lines = source.splitlines()
+    declared = []
+    for i, line in enumerate(lines):
+        match = EXPECT.match(line)
+        if not match:
+            continue
+        if i + 1 < len(lines):
+            lemma_match = LEMMA.match(lines[i + 1])
+            if lemma_match:
+                declared.append((lemma_match.group(1), match.group(1)))
+    return declared
+
+
+def parse_outcomes(output):
+    """Return {lemma name: first word of its reported outcome} from the summary block."""
+    lines = output.splitlines()
+    for i, line in enumerate(lines):
+        if SUMMARY_START.match(line.strip()):
+            outcomes = {}
+            for rest in lines[i + 1:]:
+                match = SUMMARY_LINE.match(rest)
+                if match:
+                    outcomes[match.group(1)] = match.group(2)
+            return outcomes
+    return None
+
+
+def main(argv):
+    if len(argv) != 1 or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
+    theory = Path(argv[0]).resolve()
+    if not theory.is_file():
+        print(f"usage: fv-tamarin <Theory.spthy>\n{theory} is not a file", file=sys.stderr)
+        return 2
+
+    fv_home = Path(os.environ.get("FV_HOME", Path.home() / ".cache" / "fv"))
+    tamarin = fv_home / "tamarin" / "bin" / "tamarin-prover"
+    maude = fv_home / "tamarin" / "maude" / "maude"
+    if not tamarin.is_file() or not maude.is_file():
+        print(f"UNAVAILABLE tamarin: {tamarin} or {maude} is missing; run fv-install tamarin")
+        return 3
+
+    declared = declared_lemmas(theory.read_text())
+    if not declared:
+        print(f"ERROR {theory.name}: no lemma has an '// expect:' comment")
+        return 1
+
+    try:
+        run = subprocess.run(
+            [str(tamarin), "--prove", f"--with-maude={maude}", str(theory)],
+            capture_output=True, text=True,
+            timeout=int(os.environ.get("FV_TAMARIN_TIMEOUT", "300")),
+        )
+    except subprocess.TimeoutExpired:
+        print(f"ERROR {theory.name}: tamarin-prover timed out")
+        return 1
+    output = run.stdout + run.stderr
+
+    outcomes = parse_outcomes(output)
+    if outcomes is None:
+        print(f"ERROR {theory.name}: tamarin-prover reported no summary (exit {run.returncode})")
+        print("\n".join("  " + line for line in output.strip().splitlines()[-10:]))
+        return 1
+
+    failed = False
+    for name, expected in declared:
+        got = outcomes.get(name)
+        if got is None:
+            print(f"ERROR {name}: tamarin-prover's summary has no line for this lemma")
+            failed = True
+        elif got == expected:
+            print(f"PASS check {name}: {got}")
+        else:
+            print(f"FAIL check {name}: expected {expected}, got {got}")
+            failed = True
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

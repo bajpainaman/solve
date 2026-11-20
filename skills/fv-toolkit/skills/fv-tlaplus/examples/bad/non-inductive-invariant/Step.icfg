@@ -1,0 +1,7 @@
+\* expect: holds
+\* The assumption someone makes after the TLC run passes: that WeakInv is
+\* safe to reuse as its own inductive step.
+INIT WeakInv
+NEXT Next
+INV WeakInv
+LENGTH 1

@@ -1,0 +1,52 @@
+/*
+ * Broken on purpose: Server_Accept's check can never be satisfied, so
+ * Accept never fires and Authentication holds on an empty set of traces.
+ *
+ * Source read at: 0000000
+ * Covers: no real repository.
+ *
+ * The client always signs the constant 'ok', never the nonce it was
+ * sent. The server's check was meant to be loosened to match ('ok'),
+ * but it still asks for a signature over the fresh nonce ~n, which the
+ * client never produces. BUG: Server_Accept's verify should read
+ * verify(sig, 'ok', pkA), to match what Client_Respond actually signs.
+ */
+theory DeadRule
+begin
+
+builtins: signing
+
+rule Register_key:
+  [ Fr(~ltkA) ]
+  --[ KeyGen($A) ]->
+  [ !Ltk($A, ~ltkA), !Pk($A, pk(~ltkA)), Out(pk(~ltkA)) ]
+
+rule Server_Challenge:
+  [ Fr(~n) ]
+  --[ Challenge($S, $A, ~n) ]->
+  [ Out(~n), St_Server($S, $A, ~n) ]
+
+rule Client_Respond:
+  [ !Ltk($A, ltkA), In(n) ]
+  --[ Responded($A, n) ]->
+  [ Out(<$A, sign('ok', ltkA)>) ]
+
+rule Server_Accept:
+  [ St_Server($S, $A, ~n), !Pk($A, pkA), In(<$A, sig>) ]
+  --[ Eq(verify(sig, ~n, pkA), true), Accept($S, $A, ~n) ]->
+  [ ]
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+// expect: verified
+lemma Authentication:
+  "All S A n #i. Accept(S, A, n) @ i
+    ==> (Ex #j. Responded(A, n) @ j & j < i)"
+
+// expect: falsified
+lemma Executability:
+  exists-trace
+  "Ex S A n #i. Accept(S, A, n) @ i"
+
+end

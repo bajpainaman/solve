@@ -1,0 +1,5 @@
+\* expect: holds
+\* Step 1 of 3: Init => StrongInv.
+INIT Init
+INV StrongInv
+LENGTH 0

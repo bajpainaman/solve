@@ -1,0 +1,21 @@
+# Planted bugs for the wait-for-rollout design. Each one must make its
+# property fail.
+run fv-tlc ReleaseOrdering.tla WaitForRollout.cfg WitnessContracts.cfg
+properties NeverStrandsOldVersion EventuallyMigrated
+file ReleaseOrdering.tla
+
+mutation the rollout check forgets to require every instance
+detects NeverStrandsOldVersion
+-     /\ Order = "wait_for_rollout" /\ phase = "migrate" /\ AllUpgraded
++     /\ Order = "wait_for_rollout" /\ phase = "migrate"
+
+mutation upgrading stays possible but nothing ever requires it to happen
+detects EventuallyMigrated
+- Work == (\E i \in Instances : UpgradeOne(i)) \/ UpgradeAll \/ AdvanceToMigrate \/ ContractTooEarly \/ ContractAfterRollout
+- Next == Work \/ Done
++ Work == UpgradeAll \/ AdvanceToMigrate \/ ContractTooEarly \/ ContractAfterRollout
++ Next == Work \/ (\E i \in Instances : UpgradeOne(i)) \/ Done
+
+harmless a comment on the rollout-gated contract
+- \* Source: migration.contract(), dropping the old column only once every
++ \* Source: migration.contract(). It drops the old column only once every

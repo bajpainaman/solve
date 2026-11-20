@@ -1,0 +1,25 @@
+# Planted bugs for the checked design. Each one must make its property fail.
+run fv-tlc DagScheduler.tla Checked.cfg WitnessBothDone.cfg
+properties NeverRunsTwice NeverRunsOnPartialUpstream EventuallyBothDone
+file DagScheduler.tla
+
+mutation a checked restart resumes running without reading the effect count
+detects NeverRunsTwice
+-     /\ statusA' = IF effectA > 0 THEN "executed" ELSE "running"
++     /\ statusA' = "running"
+
+mutation B treats a merely started A as good enough, even when checked
+detects NeverRunsOnPartialUpstream
+- ADependencyMet == IF Order = "checked" THEN statusA = "done" ELSE statusA # "pending"
++ ADependencyMet == statusA # "pending"
+
+mutation marking A done stays possible but nothing ever requires it to happen
+detects EventuallyBothDone
+- Work == MarkRunningA \/ ExecuteA \/ MarkDoneA \/ RestartNaive \/ RestartChecked \/ RunB
+- Next == Work \/ Crash \/ Done
++ Work == MarkRunningA \/ ExecuteA \/ RestartNaive \/ RestartChecked \/ RunB
++ Next == Work \/ Crash \/ MarkDoneA \/ Done
+
+harmless a comment on the restart action
+- \* Source: scheduler.on_restart(a), which checks the durable effect count
++ \* Source: scheduler.on_restart(a). It checks the durable effect count

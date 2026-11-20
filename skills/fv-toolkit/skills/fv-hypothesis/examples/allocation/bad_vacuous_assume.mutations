@@ -1,0 +1,7 @@
+run python -m pytest -q -p no:cacheprovider test_bad_vacuous_assume.py
+file allocate.py
+
+mutation the leftover cents are dropped
+detects test_parts_sum_to_total
+-         parts[i] += 1
++         parts[i] += 0

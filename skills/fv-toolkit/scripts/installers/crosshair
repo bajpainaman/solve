@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Installer for crosshair-tool, run through an isolated uv environment.
+#
+# Usage: scripts/installers/crosshair [--check]
+#
+# With no argument, it primes the uv cache for the pinned crosshair-tool and
+# prints "READY crosshair <version>". --check asks uv to resolve the pin
+# offline, so it reports the state without downloading anything.
+set -uo pipefail
+
+PIN="crosshair-tool==0.0.113"
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "UNAVAILABLE crosshair: uv is not on PATH; install uv (https://docs.astral.sh/uv/)"
+  exit 3
+fi
+
+if [ "${1:-}" = "--check" ]; then
+  if version=$(uv run --quiet --no-project --offline --with "$PIN" python -c "import crosshair; print(crosshair.__version__)" 2>/dev/null); then
+    echo "READY crosshair $version"
+    exit 0
+  fi
+  echo "UNAVAILABLE crosshair: not installed; run fv-install crosshair"
+  exit 3
+fi
+
+if ! version=$(uv run --quiet --no-project --with "$PIN" python -c "import crosshair; print(crosshair.__version__)" 2>&1); then
+  echo "UNAVAILABLE crosshair: uv could not install $PIN: $(echo "$version" | tail -1)"
+  exit 3
+fi
+echo "READY crosshair $version"

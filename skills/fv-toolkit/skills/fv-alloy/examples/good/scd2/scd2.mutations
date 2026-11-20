@@ -1,0 +1,18 @@
+# Planted bugs for the SCD2 model. Each one must make the named check miss its expectation.
+run fv-alloy scd2.als
+properties NoOverlap_MergeClosesPriorRowAtomically OneCurrentRow_MergeClosesPriorRowAtomically
+file scd2.als
+
+mutation two prior rows can both close into the same next row
+detects NoOverlap_MergeClosesPriorRowAtomically
+-   all r, r2: Row | (r.key = r2.key and r != r2 and not Current[r] and not Current[r2]) implies r.validTo != r2.validTo
++   all r, r2: Row | (r.key = r2.key and r != r2 and not Current[r] and not Current[r2]) implies r.validTo = r.validTo
+
+mutation a key can have more than one current row at once
+detects OneCurrentRow_MergeClosesPriorRowAtomically
+-   all k: Key | lone r: Row | r.key = k and Current[r]
++   all k: Key | some r: Row | r.key = k and Current[r]
+
+harmless a comment on Covers is reworded
+- -- A row is the active one for its key at instant i.
++ -- Whether this row is the one in force for its key at instant i.

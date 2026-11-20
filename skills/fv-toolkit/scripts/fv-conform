@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""Check that a recorded run of the real system is a behaviour of a TLA+ spec.
+
+Usage: fv-conform [--expect accepted|rejected] <Spec.tla> <Base.cfg> <log.jsonl>
+
+The log has one JSON object per line, in the order the events happened:
+
+  {"event": "init",   "vars": {"refunded": 0}}
+  {"event": "check",  "vars": {"snap": {"a": 10}}}
+  {"event": "refund", "vars": {"refunded": 10}}
+
+The first line describes the initial state. Each later line describes the
+state after one step of the spec. "vars" names only the variables that the
+system logged, and for a function or a record only the keys it logged. A string
+that equals a model value of the config is read as that model value.
+
+The script writes a trace spec that extends the spec, takes the constants from
+the base config, and asks TLC whether some behaviour of the spec matches every
+line. The spec must define Init, Next and vars.
+
+  PASS trace <log>: accepted (<n> events)
+  FAIL trace <log>: expected accepted, got rejected at event <k>: <the line>
+  ERROR trace <log>: <reason>
+
+A rejected log means that the code did something the spec does not allow, or
+that the log does not map onto the spec's steps. Check the mapping first: log
+one event per atomic step of the spec, and log the state after the step.
+
+Exit codes: 0 when the result equals the expected one, 1 on a FAIL or an ERROR,
+2 on a usage error, 3 when Java or the TLC jar is missing.
+
+Environment: FV_HOME (default ~/.cache/fv), JAVA (default: the first java that runs).
+"""
+import json
+import re
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+sys.dont_write_bytecode = True  # Keep __pycache__ out of the installed plugin.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fvlib  # noqa: E402
+
+CONSTANT_KEYWORDS = {"CONSTANT", "CONSTANTS"}
+OTHER_KEYWORDS = {
+    "SPECIFICATION", "INIT", "NEXT", "INVARIANT", "INVARIANTS", "PROPERTY", "PROPERTIES",
+    "CONSTRAINT", "CONSTRAINTS", "ACTION_CONSTRAINT", "ACTION_CONSTRAINTS", "SYMMETRY",
+    "VIEW", "CHECK_DEADLOCK", "ALIAS", "POSTCONDITION",
+}
+
+
+def constant_lines(cfg_text):
+    """Return the lines of the CONSTANT sections of a config."""
+    kept, inside = [], False
+    for line in cfg_text.splitlines():
+        words = line.split("\\*")[0].split()
+        if words and words[0] in CONSTANT_KEYWORDS:
+            inside = True
+        elif words and words[0] in OTHER_KEYWORDS:
+            inside = False
+        if inside:
+            kept.append(line)
+    return kept
+
+
+def model_values(lines):
+    """Return the names that the config uses as model values, such as a and b in Jobs = {a, b}."""
+    names = set()
+    for line in lines:
+        for body in re.findall(r"=\s*\{([^}]*)\}", line):
+            names.update(word for word in re.findall(r"[A-Za-z_]\w*", re.sub(r'"[^"]*"', "", body))
+                         if word not in ("TRUE", "FALSE"))
+    return names
+
+
+def tla(value, values):
+    """Write a JSON value in TLA+ syntax."""
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        return value if value in values else json.dumps(value)
+    if isinstance(value, list):
+        return "<<" + ", ".join(tla(v, values) for v in value) + ">>"
+    raise ValueError(f"a logged value of type {type(value).__name__} cannot be matched")
+
+
+def predicate(expr, value, values):
+    """Return the conjuncts that say `expr` matches a logged value."""
+    if isinstance(value, dict):
+        parts = []
+        for key, inner in value.items():
+            key_text = key if key in values or re.fullmatch(r"-?\d+", key) else json.dumps(key)
+            parts += predicate(f"{expr}[{key_text}]", inner, values)
+        return parts
+    return [f"{expr} = {tla(value, values)}"]
+
+
+def trace_module(spec_name, events, values):
+    def state(event, prime):
+        parts = [p for name, value in event.get("vars", {}).items() for p in predicate(name + prime, value, values)]
+        return " /\\ ".join(parts) or "TRUE"
+
+    cases = "\n      [] ".join(f"k = {k} -> {state(event, chr(39))}" for k, event in enumerate(events[1:], start=2))
+    step = f"    CASE {cases}" if len(events) > 1 else "    FALSE"
+    return f"""---- MODULE FvTrace ----
+EXTENDS {spec_name}, TLC
+CONSTANT fv_Limit
+VARIABLE fv_i
+
+fv_Init == Init /\\ fv_i = 1 /\\ {state(events[0], "")}
+fv_Step(k) ==
+{step}
+fv_Next == \\E k \\in 2..{len(events)} : k = fv_i + 1 /\\ Next /\\ fv_Step(k) /\\ fv_i' = k
+fv_Spec == fv_Init /\\ [][fv_Next]_<<vars, fv_i>>
+\\* This invariant is violated exactly when a behaviour of the spec matches the first fv_Limit events.
+fv_NotMatched == fv_i < fv_Limit
+====
+"""
+
+
+def main(argv):
+    if "-h" in argv or "--help" in argv:
+        print(__doc__)
+        return 0
+    expect = "accepted"
+    if "--expect" in argv:
+        index = argv.index("--expect")
+        expect = argv[index + 1] if index + 1 < len(argv) else ""
+        argv = argv[:index] + argv[index + 2:]
+    if len(argv) != 3 or expect not in ("accepted", "rejected"):
+        print("usage: fv-conform [--expect accepted|rejected] <Spec.tla> <Base.cfg> <log.jsonl>", file=sys.stderr)
+        return 2
+    spec, base, log = (Path(a).resolve() for a in argv)
+    for path in (spec, base, log):
+        if not path.is_file():
+            print(f"usage: {path} is not a file", file=sys.stderr)
+            return 2
+
+    jar = fvlib.fv_home() / "tla2tools.jar"
+    if not jar.is_file():
+        print(f"UNAVAILABLE tla: {jar} is missing; run fv-install tla")
+        return 3
+    java = fvlib.find_java()
+    if java is None:
+        print(fvlib.JAVA_UNAVAILABLE)
+        return 3
+
+    lines = [line for line in log.read_text().splitlines() if line.strip()]
+    try:
+        events = [json.loads(line) for line in lines]
+        constants = constant_lines(base.read_text())
+        module = trace_module(spec.stem, events, model_values(constants))
+    except (ValueError, IndexError) as error:
+        print(f"ERROR trace {log.name}: {error}")
+        return 1
+
+    with tempfile.TemporaryDirectory(prefix="fv-conform-") as scratch:
+        work = Path(scratch)
+        for source in spec.parent.glob("*.tla"):
+            shutil.copy(source, work / source.name)
+        (work / "FvTrace.tla").write_text(module)
+
+        def matched(limit):
+            """Return True when some behaviour of the spec matches the first `limit` events."""
+            (work / "FvTrace.cfg").write_text(
+                "SPECIFICATION fv_Spec\n" + "\n".join(constants)
+                + f"\nCONSTANT fv_Limit = {limit}\nINVARIANT fv_NotMatched\nCHECK_DEADLOCK FALSE\n")
+            code, output = fvlib.run_tlc(java, jar, ["-config", "FvTrace.cfg", "FvTrace.tla"], work)
+            if code == 12:
+                return True
+            if code == 0:
+                return False
+            raise RuntimeError("\n".join(output.strip().splitlines()[-6:]))
+
+        try:
+            if matched(len(events)):
+                got, detail = "accepted", f"accepted ({len(events)} events)"
+            else:
+                # Find the longest prefix that the spec accepts.
+                low, high = 0, len(events) - 1
+                while low < high:
+                    middle = (low + high + 1) // 2
+                    if matched(middle):
+                        low = middle
+                    else:
+                        high = middle - 1
+                got, detail = "rejected", f"rejected at event {low + 1}: {lines[low]}"
+        except RuntimeError as error:
+            print(f"ERROR trace {log.name}: TLC could not check the trace spec")
+            print("\n".join("  " + line for line in str(error).splitlines()))
+            return 1
+
+    if got == expect:
+        print(f"PASS trace {log.name}: {detail}")
+        return 0
+    print(f"FAIL trace {log.name}: expected {expect}, got {detail}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

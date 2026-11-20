@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Verify a Dafny file against each check's expect header.
+
+Usage: fv-dafny <File.dfy> [<Check.dcfg> ...]
+
+With no check, every .dcfg file beside the spec runs. Each check declares
+the outcome it must produce, on comment lines:
+
+  \\* expect: verified     dafny verifies every method, with no error,
+                          timeout, or un-annotated assume statement
+  \\* expect: failed       dafny reports an error or a timeout
+  \\* expect: unsound      dafny verifies, but only because of an assume
+                          statement with no {:axiom} annotation
+  TIME-LIMIT <seconds>    optional, passed as --verification-time-limit
+
+The script prints one line per check:
+
+  PASS <check>.dcfg: <outcome>
+  FAIL <check>.dcfg: expected <header>, got <outcome>
+  ERROR <check>.dcfg: ...          dafny could not check the file
+
+Dafny's own `verified, N errors` summary does not count a timeout as an
+error, so this script reads the exit code: 0 is "verified" (unless an
+unsound assume was warned about), anything else is "failed". Exit codes:
+0 when every check passes, 1 on a FAIL or an ERROR, 2 on a usage error,
+and 3 when dotnet or the Z3 solver is missing. Exit 3 means the file was
+not checked.
+
+Environment: FV_HOME (default ~/.cache/fv).
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+def expect_header(text):
+    """Return the text after 'expect:' on the first header line, or None."""
+    match = re.search(r"^\s*\\\*\s*expect:\s*(.+?)\s*$", text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def time_limit(text):
+    match = re.search(r"^\s*TIME-LIMIT\s+(\d+)\s*$", text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def dafny_dll(fv_home):
+    matches = sorted(Path(fv_home, "dafny", ".store").rglob("Dafny.dll"))
+    return matches[0] if matches else None
+
+
+def outcome_of(returncode, output):
+    unsound = "Warning: assume statement has no {:axiom} annotation" in output
+    if returncode != 0:
+        return "failed"
+    return "unsound" if unsound else "verified"
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if argv else 2
+    spec = Path(argv[0]).resolve()
+    if not spec.is_file():
+        print(f"usage: fv-dafny <File.dfy> [<Check.dcfg> ...]\n{spec} is not a file", file=sys.stderr)
+        return 2
+    checks = [Path(a).resolve() for a in argv[1:]] or sorted(spec.parent.glob("*.dcfg"))
+    if not checks:
+        print(f"usage: no .dcfg file beside {spec.name}", file=sys.stderr)
+        return 2
+
+    fv_home = Path(os.environ.get("FV_HOME", Path.home() / ".cache" / "fv"))
+    dll = dafny_dll(fv_home)
+    z3 = fv_home / "dafny" / "z3-bin" / "z3"
+    if dll is None or not z3.is_file():
+        print(f"UNAVAILABLE dafny: Dafny.dll or {z3} is missing; run fv-install dafny")
+        return 3
+    if not shutil.which("dotnet"):
+        print("UNAVAILABLE dotnet: dotnet is not on PATH; install the dotnet SDK")
+        return 3
+
+    failed = False
+    for check in checks:
+        if not check.is_file():
+            print(f"ERROR {check.name}: the check file does not exist")
+            failed = True
+            continue
+        text = check.read_text()
+        expected = expect_header(text)
+        if expected is None:
+            print(f"FAIL {check.name}: no expect header")
+            failed = True
+            continue
+        args = [str(dll), "verify", f"--solver-path={z3}", "--allow-warnings"]
+        limit = time_limit(text)
+        if limit:
+            args.append(f"--verification-time-limit={limit}")
+        args.append(str(spec))
+        run = subprocess.run(["dotnet", *args], capture_output=True, text=True)
+        output = run.stdout + run.stderr
+        if "Dafny program verifier finished" not in output and run.returncode not in (0, 4):
+            print(f"ERROR {check.name}: dafny exited {run.returncode} without a verdict")
+            print("\n".join("  " + line for line in output.strip().splitlines()[-6:]))
+            failed = True
+            continue
+        outcome = outcome_of(run.returncode, output)
+        if outcome == expected:
+            print(f"PASS {check.name}: {outcome}")
+        else:
+            print(f"FAIL {check.name}: expected {expected}, got {outcome}")
+            summary = [line for line in output.splitlines() if "Error" in line or "Warning" in line or "verifier finished" in line]
+            print("\n".join("  " + line for line in summary))
+            failed = True
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

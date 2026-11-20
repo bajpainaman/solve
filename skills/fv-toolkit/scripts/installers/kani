@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Kani is installed with cargo and then needs its own release bundle, which
+# `cargo kani setup` fetches and registers as a rustup toolchain. This
+# machine's cargo has no rustup, which `cargo kani setup` needs, so --check
+# and the plain run both report UNAVAILABLE here; this installer is for a
+# machine that does have rustup.
+#
+# Usage: kani [--check]
+#
+# Prints READY kani <cargo-kani path> (<version>), or UNAVAILABLE and exits 3
+# when cargo or rustup is missing, or when the setup step fails. --check
+# reports the state and installs nothing.
+set -uo pipefail
+
+KANI_VERSION=0.68.0
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "UNAVAILABLE kani: install Rust's cargo (https://rustup.rs, or your package manager)"
+  exit 3
+fi
+if ! command -v rustup >/dev/null 2>&1; then
+  echo "UNAVAILABLE kani: install rustup (https://rustup.rs); cargo kani setup registers Kani's compiler as a rustup toolchain and cannot run without it"
+  exit 3
+fi
+
+installed_version() {
+  # The first line reads "Kani Rust Verifier 0.68.0 (cargo plugin)".
+  cargo kani --version 2>/dev/null | sed -n 's/^Kani Rust Verifier \([0-9.]*\).*/\1/p'
+}
+
+if [ "$(installed_version)" = "$KANI_VERSION" ]; then
+  echo "READY kani $(command -v cargo-kani) ($KANI_VERSION)"
+  exit 0
+fi
+
+if [ "${1:-}" = "--check" ]; then
+  echo "UNAVAILABLE kani: not installed at version $KANI_VERSION; run fv-install kani"
+  exit 3
+fi
+
+if ! cargo install --locked kani-verifier --version "$KANI_VERSION"; then
+  echo "UNAVAILABLE kani: cargo install kani-verifier --version $KANI_VERSION failed"
+  exit 3
+fi
+if ! cargo kani setup; then
+  echo "UNAVAILABLE kani: cargo kani setup failed"
+  exit 3
+fi
+echo "READY kani $(command -v cargo-kani) ($KANI_VERSION)"

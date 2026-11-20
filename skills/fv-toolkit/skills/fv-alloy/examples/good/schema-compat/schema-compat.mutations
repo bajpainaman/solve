@@ -1,0 +1,21 @@
+# Planted bugs for the schema-compat model. Each one must make the named check miss its expectation.
+run fv-alloy schema-compat.als
+properties AllLivePairsCompatible_AdditiveWithGracePeriod AllLivePairsCompatible_NoRule
+file schema-compat.als
+
+mutation a field can be required the same version it is added, with no grace period
+detects AllLivePairsCompatible_AdditiveWithGracePeriod
+-   all v: Version | some v.prev implies v.prev.fields in v.fields
+-   all v: Version | some v.prev implies v.required in v.prev.fields
++   all v: Version | some v.prev implies v.prev.fields in v.fields
+
+mutation compatibility no longer checks the producer at all
+detects AllLivePairsCompatible_NoRule
+- pred Compatible[pv, cv: Version] { cv.required in pv.fields }
++ pred Compatible[pv, cv: Version] { cv.required in pv.fields + cv.fields }
+
+harmless a comment on LiveTogether is reworded
+- -- During a rolling deploy, the immediately adjacent version runs alongside
+- -- the current one, in either direction, until the rollout finishes.
++ -- The version one step older or one step newer, the two that overlap
++ -- while a rolling deploy is in progress.

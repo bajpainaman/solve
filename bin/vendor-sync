@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# vendor-sync — copy a licensed upstream skill into skills/<id> at its pin, or review a pin bump
+set -euo pipefail
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+exec python3 "$SCRIPT_DIR/../lib/solve_vendor.py" "$@"

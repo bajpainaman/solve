@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# fv-install tamarin: fetch pinned tamarin-prover and maude binaries,
+# verified by SHA-256, under $FV_HOME/tamarin/.
+#
+# Two platforms have a pin: macOS on arm64 and Linux on x86_64. On macOS the
+# tamarin-prover manual names Homebrew, and the tap bottles a plain binary, so
+# this installer downloads that bottle from the GitHub release instead of
+# running brew. On Linux it downloads the release's own ubuntu binary. Maude
+# comes from its own release zip on both. The dylib dependencies of both macOS
+# binaries resolve to /usr/lib only on the pin below, so the install works
+# without a Homebrew prefix on disk.
+#
+# `sane` below is a runtime check. When a binary does not run on this machine,
+# the installer reports UNAVAILABLE with the brew remedy and never READY.
+#
+# Usage: installers/tamarin [--check]
+# Environment: FV_HOME (default ~/.cache/fv).
+set -uo pipefail
+
+FV_HOME="${FV_HOME:-$HOME/.cache/fv}"
+DIR="$FV_HOME/tamarin"
+REMEDY="install it yourself: brew install tamarin-prover/tap/tamarin-prover"
+
+# To move a pin, change the version and every checksum together.
+TAMARIN_VERSION=1.12.0
+MAUDE_VERSION=3.5.1
+TAMARIN_BASE="https://github.com/tamarin-prover/tamarin-prover/releases/download/$TAMARIN_VERSION"
+MAUDE_BASE="https://github.com/maude-lang/Maude/releases/download/Maude$MAUDE_VERSION"
+PLATFORM="$(uname -s)-$(uname -m)"
+case "$PLATFORM" in
+  Darwin-arm64)
+    TAMARIN_FILE="tamarin-prover-$TAMARIN_VERSION.arm64_tahoe.bottle.tar.gz"
+    TAMARIN_SHA256=c4174f9f850d31243473d1bc8c04eb20117b28ec5a66276078768b58ef6ee9fd
+    TAMARIN_MEMBER="tamarin-prover/$TAMARIN_VERSION/bin/tamarin-prover"
+    MAUDE_FILE="Maude-$MAUDE_VERSION-macos-arm64.zip"
+    MAUDE_SHA256=95851274f57b3853aab833674e2b770ed800f38fb1f3d03c97dcac56346c13dc
+    ;;
+  Linux-x86_64)
+    TAMARIN_FILE="tamarin-prover-$TAMARIN_VERSION-linux64-ubuntu.tar.gz"
+    TAMARIN_SHA256=201be06f469e47cff554df6ca93db8366fc2c69d70c61fcbd1370a1074b469c6
+    TAMARIN_MEMBER=tamarin-prover
+    MAUDE_FILE="Maude-$MAUDE_VERSION-linux-x86_64.zip"
+    MAUDE_SHA256=72ed1ca87e3b3d0dfc6ee1436baf154bf04c45ff97d521bec040c5e8dfc8f92c
+    ;;
+  *) TAMARIN_FILE="" ;;
+esac
+TAMARIN_URL="${FV_TAMARIN_URL:-$TAMARIN_BASE/$TAMARIN_FILE}"
+MAUDE_URL="${FV_MAUDE_URL:-$MAUDE_BASE/${MAUDE_FILE:-}}"
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+unavailable() {
+  echo "UNAVAILABLE tamarin: $1"
+  exit 3
+}
+
+# Maude's own manual says its prelude.maude must sit beside the binary it
+# starts from, so maude's directory is kept intact and put first on PATH
+# rather than copying just the executable out of it.
+sane() {
+  PATH="$DIR/maude:$PATH" "$DIR/bin/tamarin-prover" --version >/dev/null 2>&1
+}
+
+if [ -x "$DIR/bin/tamarin-prover" ] && [ -x "$DIR/maude/maude" ] && sane; then
+  echo "READY tamarin $DIR/bin/tamarin-prover"
+  exit 0
+fi
+
+if [ "${1:-}" = "--check" ]; then
+  unavailable "not installed or not runnable here; $REMEDY"
+fi
+
+[ -n "$TAMARIN_FILE" ] || unavailable "no binary is pinned for $PLATFORM; $REMEDY"
+
+mkdir -p "$DIR/bin" "$DIR/maude"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+curl -fsSL -o "$tmp/tamarin.tar.gz" "$TAMARIN_URL" ||
+  unavailable "the download of tamarin-prover from $TAMARIN_URL failed; $REMEDY"
+[ "$(sha256 "$tmp/tamarin.tar.gz")" = "$TAMARIN_SHA256" ] ||
+  unavailable "checksum of the tamarin-prover download differs from the pinned $TAMARIN_SHA256; $REMEDY"
+
+curl -fsSL -o "$tmp/maude.zip" "$MAUDE_URL" ||
+  unavailable "the download of maude from $MAUDE_URL failed; $REMEDY"
+[ "$(sha256 "$tmp/maude.zip")" = "$MAUDE_SHA256" ] ||
+  unavailable "checksum of the maude download differs from the pinned $MAUDE_SHA256; $REMEDY"
+
+tar xzf "$tmp/tamarin.tar.gz" -C "$tmp" "$TAMARIN_MEMBER" ||
+  unavailable "the tamarin-prover archive did not contain the expected binary; $REMEDY"
+cp "$tmp/$TAMARIN_MEMBER" "$DIR/bin/tamarin-prover"
+chmod +x "$DIR/bin/tamarin-prover"
+
+unzip -oq "$tmp/maude.zip" -d "$DIR/maude" || unavailable "could not extract the maude archive; $REMEDY"
+chmod +x "$DIR/maude/maude"
+
+if sane; then
+  echo "READY tamarin $DIR/bin/tamarin-prover"
+else
+  unavailable "the downloaded binaries do not run on this machine; $REMEDY"
+fi

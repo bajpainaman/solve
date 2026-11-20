@@ -1,0 +1,8 @@
+# Planted bug in the real Ledger. The mocked property must miss it.
+run python -m pytest -q -p no:cacheprovider test_mocked_ledger.py
+file subject.py
+
+mutation the real ledger charges double the amount
+detects test_checkout_charges_the_cart_total
+-         self.balance += amount
++         self.balance += amount * 2

@@ -1,0 +1,22 @@
+# Planted bugs in allocate(). Each one must make the harness fail.
+# Kani ignores CARGO_TARGET_DIR and writes to <crate>/target/kani/, and
+# fv-mutate leaves target/ out of its copy, so each run here rebuilds from
+# a cold cache.
+run fv-kani check_every_part_is_at_most_the_total
+properties check_every_part_is_at_most_the_total
+file src/lib.rs
+
+mutation the u32 promotion is dropped, so the multiply overflows u16 for a large total
+detects check_every_part_is_at_most_the_total
+-         parts[i] = ((total as u32) * (percents[i] as u32) / 100) as u16;
++         parts[i] = (total * percents[i] as u16) / 100;
+
+mutation the share is computed as a tenth instead of a hundredth
+detects check_every_part_is_at_most_the_total
+-         parts[i] = ((total as u32) * (percents[i] as u32) / 100) as u16;
++         parts[i] = ((total as u32) * (percents[i] as u32) / 10) as u16;
+
+harmless a comment on the loop
+-     for i in 0..3 {
++     for i in 0..3 {
++         // one part per percent

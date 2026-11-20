@@ -1,0 +1,20 @@
+# Planted bugs for the atomic design. Each one must make its property fail.
+run fv-tlc RefundRace.tla AtomicRefund.cfg WitnessFullRefund.cfg
+properties NeverOverRefund EventuallyDone
+file RefundRace.tla
+
+mutation the atomic refund ignores what was already refunded
+detects NeverOverRefund
+-     /\ refunded' = refunded + (Paid - refunded)
++     /\ refunded' = refunded + Paid
+
+mutation an atomic job never reaches done
+detects EventuallyDone
+-     /\ refunded' = refunded + (Paid - refunded)
+-     /\ pc' = [pc EXCEPT ![j] = "done"]
++     /\ refunded' = refunded + (Paid - refunded)
++     /\ pc' = [pc EXCEPT ![j] = "check"]
+
+harmless a comment on the invariant
+- NeverOverRefund == refunded <= Paid
++ NeverOverRefund == refunded <= Paid  \* the cap is the payment

@@ -1,0 +1,49 @@
+/*
+ * Source read at: 0000000
+ * Covers: no real repository; this models catalog E's challenge-response
+ * authentication over a public channel against a Dolev-Yao attacker.
+ *
+ * A server challenges a client with a fresh nonce and accepts a response
+ * once it verifies a signature over that nonce with the client's public
+ * key. The client signs the nonce itself, so a signature only verifies
+ * for the challenge it was made for.
+ */
+theory ChallengeResponse
+begin
+
+builtins: signing
+
+// Each agent registers a signing key once. !Ltk and !Pk are standard facts
+// from the signing builtin's usual idiom.
+rule Register_key:
+  [ Fr(~ltkA) ]
+  --[ KeyGen($A) ]->
+  [ !Ltk($A, ~ltkA), !Pk($A, pk(~ltkA)), Out(pk(~ltkA)) ]
+
+// The server issues a fresh challenge to a claimed client A.
+rule Server_Challenge:
+  [ Fr(~n) ]
+  --[ Challenge($S, $A, ~n) ]->
+  [ Out(~n), St_Server($S, $A, ~n) ]
+
+// The client signs the nonce it was sent.
+rule Client_Respond:
+  [ !Ltk($A, ltkA), In(n) ]
+  --[ Responded($A, n) ]->
+  [ Out(<$A, sign(n, ltkA)>) ]
+
+rule Server_Accept:
+  [ St_Server($S, $A, ~n), !Pk($A, pkA), In(<$A, sig>) ]
+  --[ Eq(verify(sig, ~n, pkA), true), Accept($S, $A, ~n) ]->
+  [ ]
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+// Every accepted response was a response to that same challenge.
+// expect: verified
+lemma Authentication:
+  "All S A n #i. Accept(S, A, n) @ i
+    ==> (Ex #j. Responded(A, n) @ j & j < i)"
+
+end

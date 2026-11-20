@@ -57,6 +57,11 @@ class UpdateTests(unittest.TestCase):
         self.assertIn("sources.json", result["action"])
         self.assertIn("UPDATE   lib:", u.format_report({"results": [result]}, quiet=True))
 
+    def test_vendored_update_points_at_the_review_step(self):
+        self.write_sources({**self.vendored(self.v1), "vendor": {}})
+        commit(self.upstream, "v2")
+        self.assertIn("bin/vendor-sync lib --review", self.run_check(force=True)[0]["action"])
+
     def test_unreachable_repo_is_unknown_not_current(self):
         source = self.vendored(self.v1)
         source["repo"] = str(self.root / "missing")
@@ -106,7 +111,8 @@ class UpdateTests(unittest.TestCase):
 
     def test_repo_pins_are_full_and_html_sync_reads_them(self):
         sources = u.load_sources()
-        self.assertEqual({s["id"] for s in sources}, {"solve", "html-artifact", "html-effectiveness", "simplify-writing", "cdpi", "impeccable"})
+        self.assertEqual({s["id"] for s in sources}, {"solve", "html-artifact", "html-effectiveness", "simplify-writing", "cdpi", "impeccable",
+                          "testing-toolkit", "fv-toolkit", "sdlc-toolkit", "pr-review"})
         import solve_bundle
         self.assertEqual(solve_bundle.REF, u.pinned_ref("html-artifact"))
 

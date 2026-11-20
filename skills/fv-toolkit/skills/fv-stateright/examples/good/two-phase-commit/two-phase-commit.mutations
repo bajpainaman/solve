@@ -1,0 +1,34 @@
+# Planted bugs for the centralized design. Each one must make rms_agree
+# fail for Centralized; CARGO_TARGET_DIR keeps the build outside the copy
+# fv-mutate makes, so the copy stays small and the build is reused.
+run export CARGO_TARGET_DIR="${FV_HOME:-$HOME/.cache/fv}/stateright/target/two-phase-commit"; cargo test --quiet --lib
+properties rms_agree_centralized
+file src/lib.rs
+
+mutation an RM commits once it sees its own vote alone, dropping the check on the others
+detects rms_agree_centralized
+-             Action::Finish(i) if rms[i] == RmState::Prepared => {
+-                 if rms.iter().any(|r| *r == RmState::Aborted) {
+-                     rms[i] = RmState::Aborted;
+-                 } else if rms.iter().all(|r| *r == RmState::Prepared || *r == RmState::Committed) {
+-                     rms[i] = RmState::Committed;
+-                 } else {
+-                     return None;
+-                 }
+-             }
++             Action::Finish(i) if rms[i] == RmState::Prepared => {
++                 rms[i] = RmState::Committed;
++             }
+
+mutation prepare commits an RM directly, skipping the centralized check entirely
+detects rms_agree_centralized
+-             Action::Prepare(i) if rms[i] == RmState::Working => rms[i] = RmState::Prepared,
+-             Action::AbortUnilaterally(i) if rms[i] == RmState::Working => rms[i] = RmState::Aborted,
+-             Action::Finish(i) if rms[i] == RmState::Prepared => {
++             Action::Prepare(i) if rms[i] == RmState::Working => rms[i] = RmState::Committed,
++             Action::AbortUnilaterally(i) if rms[i] == RmState::Working => rms[i] = RmState::Aborted,
++             Action::Finish(i) if rms[i] == RmState::Prepared => {
+
+harmless a wording change in the design comment
+- /// The chosen design: an RM finishes only after checking every RM's vote.
++ /// The chosen design: an RM finishes only once it has checked every RM's vote.

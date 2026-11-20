@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Installer for z3, run through an isolated uv environment.
+#
+# Usage: scripts/installers/z3 [--check]
+#
+# With no argument, it primes the uv cache for the pinned z3-solver and prints
+# "READY z3 <version>". --check asks uv to resolve the pin offline, so it
+# reports the state without downloading anything.
+#
+# z3-solver vendors its own prebuilt library, so PyPI's own package hash is
+# the only integrity check there is; uv verifies that hash on every install.
+set -uo pipefail
+
+PIN="z3-solver==5.4.1"
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "UNAVAILABLE z3: uv is not on PATH; install uv (https://docs.astral.sh/uv/)"
+  exit 3
+fi
+
+if [ "${1:-}" = "--check" ]; then
+  if version=$(uv run --quiet --no-project --offline --with "$PIN" python -c "import z3; print(z3.get_version_string())" 2>/dev/null); then
+    echo "READY z3 $version"
+    exit 0
+  fi
+  echo "UNAVAILABLE z3: not installed; run fv-install z3"
+  exit 3
+fi
+
+if ! version=$(uv run --quiet --no-project --with "$PIN" python -c "import z3; print(z3.get_version_string())" 2>&1); then
+  echo "UNAVAILABLE z3: uv could not install $PIN: $(echo "$version" | tail -1)"
+  exit 3
+fi
+echo "READY z3 $version"

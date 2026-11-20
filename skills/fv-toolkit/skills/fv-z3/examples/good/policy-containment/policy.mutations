@@ -1,0 +1,18 @@
+# Planted bugs in the policy containment check. Each one must make the named check miss its expectation.
+run fv-z3 policy.py
+properties TightenedPolicyAllowsNothingTheOldOneDenied
+file policy.py
+
+mutation the new policy picks up delete by mistake
+detects TightenedPolicyAllowsNothingTheOldOneDenied
+-     return And(region == 0, action == 0)
++     return And(region == 0, Or(action == 0, action == 2))
+
+mutation the old policy loses read, outside the rule that is under review
+detects TightenedPolicyAllowsNothingTheOldOneDenied
+-     return And(Or(region == 0, region == 1), Or(action == 0, action == 1))
++     return And(Or(region == 0, region == 1), action == 1)
+
+harmless a comment is reworded
+- """The policy in force today: us or eu, read or write."""
++ """The policy as deployed today: us or eu, read or write."""

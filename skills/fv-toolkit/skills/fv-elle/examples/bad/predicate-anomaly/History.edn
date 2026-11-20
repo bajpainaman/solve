@@ -1,0 +1,17 @@
+;; Source read at: 0000000
+;; Covers: approvals/worker.py
+;; The header shows the form of a sync record. This example describes no
+;; real repository, so the commit is a placeholder.
+;;
+;; expect: valid
+;; model: list-append
+;; consistency-models: strict-serializable
+;; anomalies: G0,G1a,G1b,G1c,G-single,G-single-process,G-single-realtime,G2-item
+;;
+;; Key 1 holds the ids of pending jobs. Key 2 holds the ids of approved
+;; jobs. Process 0 creates job 42 as pending. Process 1 approves job 42 and,
+;; in the same transaction, rereads the pending list for its own bookkeeping.
+{:index 0, :type :invoke, :process 0, :value [[:append 1 42]]}
+{:index 1, :type :ok,     :process 0, :value [[:append 1 42]]}
+{:index 2, :type :invoke, :process 1, :value [[:append 2 42] [:r 1 nil]]}
+{:index 3, :type :ok,     :process 1, :value [[:append 2 42] [:r 1 [42]]]}

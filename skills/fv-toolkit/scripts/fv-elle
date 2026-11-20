@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Check each transaction history with elle-cli and compare it with its expect header.
+
+Usage: fv-elle <History.edn> [<History.edn> ...]
+
+Each history file declares, as EDN comments, the model and models elle-cli
+checks it against and the outcome it must produce:
+
+  ;; expect: valid                      elle-cli finds no anomaly
+  ;; expect: invalid <AnomalyType>      elle-cli finds this anomaly
+  ;; model: list-append                 -m
+  ;; consistency-models: strict-serializable   -c, comma-separated
+  ;; anomalies: G0,G1a,G1b,G1c          -a, comma-separated
+
+The script prints one line per file:
+
+  PASS <file>: valid
+  PASS <file>: invalid <AnomalyType>
+  FAIL <file>: expected <header>, got <outcome>
+  ERROR <file>: ...               elle-cli could not check the history
+
+Exit codes: 0 when every history passes, 1 on a FAIL or an ERROR, 2 on a
+usage error, and 3 when Java or the elle-cli jar is missing. Exit 3 means
+the history was not checked, so never report it as a pass or a failure of
+the history.
+
+Environment: FV_HOME (default ~/.cache/fv), JAVA (default java).
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+def header(text):
+    """Return the EDN comment headers of a history file, as a dict."""
+    values = {}
+    for line in text.splitlines():
+        match = re.match(r"^\s*;;\s*([\w-]+):\s*(.+?)\s*$", line)
+        if match:
+            values[match.group(1)] = match.group(2)
+    return values
+
+
+def outcome_of(output):
+    """Map elle-cli's -v JSON report to (valid, anomaly type), or (None, None) when it did not check."""
+    valid = re.search(r'"valid\?"\s*:\s*(true|false)', output)
+    if not valid:
+        return None, None
+    if valid.group(1) == "true":
+        return True, None
+    kind = re.search(r'"anomaly-types"\s*:\s*\[\s*"([^"]+)"', output)
+    return False, kind.group(1) if kind else "unknown"
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if argv else 2
+    files = [Path(a).resolve() for a in argv]
+
+    java = os.environ.get("JAVA", "java")
+    jar = Path(os.environ.get("FV_HOME", Path.home() / ".cache" / "fv")) / "elle" / "elle-cli.jar"
+    if not jar.is_file():
+        print(f"UNAVAILABLE elle: {jar} is missing; run fv-install elle")
+        return 3
+    if not shutil.which(java):
+        print(f"UNAVAILABLE java: {java} is not on PATH; install a JDK 11 to 20 or set JAVA")
+        return 3
+
+    failed = False
+    for history in files:
+        if not history.is_file():
+            print(f"ERROR {history.name}: the history file does not exist")
+            failed = True
+            continue
+        text = history.read_text()
+        values = header(text)
+        expected = values.get("expect")
+        if expected is None or "model" not in values:
+            print(f"FAIL {history.name}: no expect header, or no model declared")
+            failed = True
+            continue
+        run = subprocess.run(
+            [java, "-jar", str(jar), "-m", values["model"], "-f", "edn", "-v",
+             "-c", values.get("consistency-models", "strict-serializable"),
+             "-a", values.get("anomalies", "G0"), str(history)],
+            capture_output=True, text=True,
+        )
+        output = run.stdout + run.stderr
+        valid, kind = outcome_of(output)
+        if valid is None:
+            print(f"ERROR {history.name}: elle-cli exited {run.returncode} without a verdict")
+            print("\n".join("  " + line for line in output.strip().splitlines()[-6:]))
+            failed = True
+            continue
+        reported = "valid" if valid else f"invalid {kind}"
+        expected_kind = expected[len("invalid "):] if expected.startswith("invalid ") else None
+        matches = valid if expected == "valid" else (not valid and kind == expected_kind)
+        if matches:
+            print(f"PASS {history.name}: {reported}")
+        else:
+            print(f"FAIL {history.name}: expected {expected}, got {reported}")
+            failed = True
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

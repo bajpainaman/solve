@@ -1,0 +1,19 @@
+;; Source read at: 0000000
+;; Covers: cart/service.py
+;; The header shows the form of a sync record. This example describes no
+;; real repository, so the commit is a placeholder.
+;;
+;; expect: valid
+;; model: list-append
+;; consistency-models: read-committed
+;; anomalies: G0,G1a,G1b,G1c
+;;
+;; The same two transactions as ../../good/write-skew/History.edn: a write
+;; skew between cart 1 and cart 2. This check only asks for the anomalies
+;; read-committed forbids. Write skew is allowed under read-committed, so
+;; this check never looks for it, even though the cart service's code
+;; assumes it is running at strict-serializable isolation.
+{:index 0, :type :invoke, :process 0, :value [[:append 1 10] [:r 2 nil]]}
+{:index 1, :type :ok,     :process 0, :value [[:append 1 10] [:r 2 []]]}
+{:index 2, :type :invoke, :process 1, :value [[:append 2 20] [:r 1 nil]]}
+{:index 3, :type :ok,     :process 1, :value [[:append 2 20] [:r 1 []]]}

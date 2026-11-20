@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Run a Kani harness and print one verdict line for it.
+
+Usage: fv-kani <harness-name>
+
+Runs `cargo kani --harness <harness-name>` in the current directory. Kani's
+own output names checks, not the harness, on its pass/fail summary line, so
+this script reprints the result as:
+
+  PASS kani <harness>: SUCCESSFUL
+  FAIL kani <harness>: <failed check's description> (<file>:<line>)
+  COVER <label>: SATISFIED
+  COVER <label>: UNSATISFIED
+
+Exit codes: 0 when verification succeeds and every cover is SATISFIED,
+1 on a FAIL or an UNSATISFIED cover, 2 on a usage error, and 3 when cargo
+or rustup is missing.
+
+Environment: none beyond cargo and rustup's own.
+"""
+import re
+import shutil
+import sys
+from subprocess import run
+
+VERDICT = re.compile(r"^VERIFICATION:- (SUCCESSFUL|FAILED)\s*$", re.MULTILINE)
+FAILED_CHECK = re.compile(r'^Failed Checks: (.+)\n File: "([^"]+)", line (\d+)', re.MULTILINE)
+COVER = re.compile(r'Check \d+: \S+\.cover\.\d+\n\s*- Status: (SATISFIED|UNSATISFIED)\n\s*- Description: "([^"]*)"')
+
+
+def main(argv):
+    if len(argv) != 1 or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
+    harness = argv[0]
+
+    if not shutil.which("cargo") or not shutil.which("rustup"):
+        print("UNAVAILABLE kani: cargo or rustup is not on PATH; run fv-install kani")
+        return 3
+
+    result = run(["cargo", "kani", "--harness", harness], capture_output=True, text=True)
+    output = result.stdout + result.stderr
+
+    verdict = VERDICT.search(output)
+    if not verdict:
+        print(f"ERROR kani {harness}: cargo kani exited {result.returncode} without a VERIFICATION line")
+        print("\n".join("  " + line for line in output.strip().splitlines()[-8:]))
+        return 1
+
+    failed = verdict.group(1) == "FAILED"
+    if failed:
+        checks = FAILED_CHECK.findall(output)
+        detail = "; ".join(f"{d} ({f}:{n})" for d, f, n in checks) or "see cargo kani output above"
+        print(f"FAIL kani {harness}: {detail}")
+    else:
+        print(f"PASS kani {harness}: SUCCESSFUL")
+
+    cover_failed = False
+    for status, label in COVER.findall(output):
+        print(f"COVER {label}: {status}")
+        cover_failed = cover_failed or status == "UNSATISFIED"
+
+    return 1 if (failed or cover_failed) else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

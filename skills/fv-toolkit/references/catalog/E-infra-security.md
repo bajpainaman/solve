@@ -1,0 +1,18 @@
+# Catalog E — Infrastructure, security, and policy
+
+Configuration is data, so SMT and relational solvers fit it best. AWS's own practice is the template: Zelkova turns IAM policies into SMT to answer questions like "is this public?", and Tiros proves VPC reachability without sending packets ([Backes et al.](https://conf.researchr.org/getImage/icst-2020/orig/liana-summary.pdf)). Controllers and reconcilers are the exception: they are behavioral, so they need TLA-style liveness.
+
+| Pattern | What breaks | Tool | Model | Properties | Code link |
+| --- | --- | --- | --- | --- | --- |
+| IAM / access policies | Unintended public or cross-account access; policy change broadens access | Z3 (Zelkova approach); IAM Access Analyzer where available | Request context as symbolic variables; allow/deny semantics | Policy B ≤ policy A (no broadening); no public principal | Policy diff check in CI |
+| RBAC | Role explosion; escalation through role grants | Alloy | Users, roles, permissions, `grants` relation | No user can grant a permission they don't hold | Generate from role config |
+| ABAC / policy languages (Cedar, OPA/Rego) | Policies overlap, shadow, or contradict | Cedar analyzer / Z3; OPA tests | Attributes symbolic | Default deny; forbid overrides permit; equivalence of refactored policies | Run the analyzer on every policy PR |
+| ReBAC (Zanzibar-style) | Relation rewrite cycles; unexpected inheritance | Alloy | Objects, relations, rewrite rules | Expected access matrix; no unintended path | Generated tuples → check service answers |
+| Network reachability (VPC, security groups, k8s NetworkPolicy) | DB reachable from internet; segmentation gaps | Z3 / MonoSAT (Tiros approach); Batfish for on-prem | Graph of subnets, rules, routes | No path from internet to private tiers | Generate model from IaC state |
+| Infrastructure as code (Terraform, CDK) | Drift; invariants (encryption, tagging, regions) violated | Z3 or Alloy over the plan JSON; policy-as-code | Resources + attributes from `terraform show -json` | All buckets encrypted; no public ingress; required tags | Gate the plan in CI |
+| Kubernetes controllers / operators (reconcile loops) | Never converges; flaps; acts on stale cache | TLA+/Quint for design; Anvil + Verus for verified Rust controllers ([OSDI '24](https://www.usenix.org/conference/osdi24/presentation/sun-xudong)) | Desired state, observed state, API server, stale reads, crashes | Eventually stable reconciliation (ESR); safety on owned resources | Quint MBT against the reconcile function ([example](https://see-quick.github.io/posts/model-based-testing-with-formal-verification)) |
+| Secrets / certificate / key rotation | Window where old secret revoked before all clients switched | TLA+ | Issuer, distribution, clients, revocation | At every moment, every client holds a valid credential | Rotation drill test |
+| OAuth / OIDC / session protocols | Token replay; mix-up attacks; CSRF in flows | Tamarin or ProVerif | Protocol roles + Dolev–Yao attacker | Secrecy; authentication; no replay | Conformance tests per message |
+| Webhook signatures / HMAC verification | Timing attacks; replay of signed payloads | Tamarin (protocol) + Hypothesis (verifier) | Signed payload, timestamp, nonce | Replay outside the window rejected | Property tests on the verifier |
+| Multi-account / landing-zone guardrails (SCPs) | Guardrail gap allows forbidden action | Z3 | SCP + identity + resource policies combined | Forbidden actions denied in every account | Policy-combination check |
+| Disaster recovery / backups | Restore produces inconsistent cross-system state | TLA+ | Snapshot times across stores | Restored state is a consistent cut | Scheduled restore drill |

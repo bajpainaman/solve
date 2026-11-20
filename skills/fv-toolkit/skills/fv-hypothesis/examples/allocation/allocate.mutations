@@ -1,0 +1,24 @@
+# Planted bugs in allocate(). Each one must make the named property fail.
+run python -m pytest -q -p no:cacheprovider test_allocate.py
+properties test_parts_sum_to_total test_each_part_is_within_one_cent_of_its_share test_result_does_not_depend_on_line_order
+file allocate.py
+
+mutation the leftover cents are dropped
+detects test_parts_sum_to_total
+-         parts[i] += 1
++         parts[i] += 0
+
+mutation every leftover cent goes to the first line
+detects test_each_part_is_within_one_cent_of_its_share
+-     for i in order[: total - sum(parts)]:
+-         parts[i] += 1
++     parts[0] += total - sum(parts)
+
+mutation a tie goes to the earlier line
+detects test_result_does_not_depend_on_line_order
+-     order = sorted(range(len(weights)), key=lambda i: (-remainders[i], -weights[i], i))
++     order = sorted(range(len(weights)), key=lambda i: (-remainders[i], i))
+
+harmless the error message is reworded
+-         raise ValueError("total must be >= 0 and every weight must be > 0")
++         raise ValueError("total must not be negative and every weight must be positive")

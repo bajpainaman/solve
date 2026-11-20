@@ -20,9 +20,10 @@ MODULES = ("solve_benchmark.py", "solve_contract.py", "solve_html.py", "solve_ou
 SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 # Sibling skills that plugin/ROUTING.md routes between, committed under skills/ at the pins in
 # sources.json. skills/solve itself is generated from this package (see write_tree).
-SIBLINGS = ("cdpi", "impeccable")
+SIBLINGS = ("skill-router", "cdpi", "impeccable", "testing-toolkit", "fv-toolkit", "sdlc-toolkit", "pr-review")
 EXECUTABLES = ("skills/solve/bin/", "skills/cdpi/bin/", "skills/cdpi/install",
-               "skills/impeccable/scripts/impeccable")
+               "skills/impeccable/scripts/impeccable", "skills/fv-toolkit/scripts/",
+               "skills/sdlc-toolkit/scripts/", "skills/pr-review/skills/pr-review/pr-review.sh")
 FORBIDDEN_PARTS = {".git", ".env", "__pycache__", "node_modules", "private", ".DS_Store"}
 
 
@@ -76,15 +77,19 @@ def collect(root=ROOT):
         if relative and (root / relative).is_file():
             entries[relative] = read_file(root / relative)
     pins = {s["id"]: s for s in json.loads(read_file(root / "sources.json"))["sources"]}
-    fields = dict(l.split("=", 1) for l in entries["skills/impeccable/SOURCE"].decode().splitlines() if "=" in l)
-    require(fields.get("ref") == pins["impeccable"]["ref"], "skills/impeccable does not match its pin; run bin/impeccable-sync")
+    vendored = {i: s for i, s in pins.items() if "vendor" in s}
+    for source_id, source in vendored.items():
+        fields = dict(l.split("=", 1) for l in entries[f"{source['path']}/SOURCE"].decode().splitlines() if "=" in l)
+        require(fields.get("ref") == source["ref"], f"{source['path']} does not match its pin; run bin/vendor-sync {source_id}")
+    from solve_catalog import TARGET, build as build_catalog
+    require(entries.get(TARGET.as_posix()) == build_catalog(root).encode(), "skills/skill-router is stale; run bin/build-plugin --tree")
     lock = {
         "repository": manifest["repository"],
         "source_commit": git_output(root, "rev-parse", "HEAD").decode().strip(),
         "source_dirty": bool(git_output(root, "status", "--porcelain", "--untracked-files=normal").strip()),
         "runtime_version": entries[skill + "VERSION"].decode().strip(),
         "plugin_version": manifest["version"],
-        "bundled_skills": {"cdpi": pins["cdpi"]["ref"], "impeccable": pins["impeccable"]["ref"]},
+        "bundled_skills": {i: pins[i]["ref"] for i in ("cdpi", *vendored)},
         "excluded_dependency": "html-artifact; no upstream license, never redistributed",
         "files": {name: hashlib.sha256(data).hexdigest() for name, data in sorted(entries.items())},
     }
@@ -135,7 +140,9 @@ def validate(entries):
                  "skills/solve/templates/html-effectiveness/NOTICE.md", "skills/solve/references/decision.md",
                  "skills/solve/references/artifacts.md", "skills/solve/references/writing.md",
                  "ROUTING.md", "skills/cdpi/LICENSE", "skills/cdpi/reference/LICENSE.md",
-                 "skills/impeccable/LICENSE", "skills/impeccable/NOTICE.md"):
+                 "skills/impeccable/LICENSE", "skills/impeccable/NOTICE.md", "skills/testing-toolkit/LICENSE",
+                 "skills/fv-toolkit/LICENSE", "skills/fv-toolkit/NOTICE.md", "skills/sdlc-toolkit/LICENSE",
+                 "skills/pr-review/LICENSE"):
         require(name in entries and entries[name].strip(), f"missing component: {name}")
     catalog = json.loads(entries["skills/solve/gates/catalog.json"])
     require(len(catalog["gates"]) == 28, "do not weaken the 28-gate contract while packaging")
@@ -151,7 +158,7 @@ def validate(entries):
         require(hashlib.sha256(entries[name]).hexdigest() == digest, f"source index mismatch: {name}")
     # Check all local links in authored portable instructions, excluding quoted upstream examples.
     instructions = [n for n in entries if n in (skill_path, "skills/solve/write/WRITE.md", "ROUTING.md",
-                                                "skills/cdpi/SKILL.md") or
+                                                "skills/cdpi/SKILL.md", "skills/skill-router/SKILL.md") or
                     n.startswith("skills/cdpi/reference/") or
                     n.startswith("skills/solve/references/") and n.split("/")[-1] in
                     {"decision.md", "operating-rules.md", "artifacts.md", "writing.md", "router.md", "output.md"}]
@@ -218,6 +225,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.tree:
+            from solve_catalog import write as write_catalog
+            write_catalog()
             entries = collect()
             validate(entries)
             print(f"wrote {write_tree(entries, ROOT / 'skills')}")

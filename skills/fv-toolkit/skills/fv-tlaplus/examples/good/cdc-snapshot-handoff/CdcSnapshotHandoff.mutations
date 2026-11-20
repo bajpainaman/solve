@@ -1,0 +1,21 @@
+# Planted bugs for the correct-offset design. Each one must make its
+# property fail.
+run fv-tlc CdcSnapshotHandoff.tla CorrectOffset.cfg WitnessCaughtUp.cfg
+properties ExactlyOnce EventuallyCaughtUp
+file CdcSnapshotHandoff.tla
+
+mutation the snapshot notes one change before the true boundary
+detects ExactlyOnce
+-     /\ snapshotTaken' = TRUE /\ noted' = 2
++     /\ snapshotTaken' = TRUE /\ noted' = 1
+
+mutation streaming stays possible but nothing ever requires it to happen
+detects EventuallyCaughtUp
+- Work == TakeSnapshotCorrect \/ (\E n \in 1..3 : TakeSnapshotWrong(n)) \/ StreamNext
+- Next == Work \/ Done
++ Work == TakeSnapshotCorrect \/ (\E n \in 1..3 : TakeSnapshotWrong(n))
++ Next == Work \/ StreamNext \/ Done
+
+harmless a comment on the snapshot action
+- \* Source: connector.snapshot(), applying c1 and noting where to stream from
++ \* Source: connector.snapshot(). It applies c1 and notes where to stream from

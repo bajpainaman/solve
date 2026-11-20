@@ -1,0 +1,20 @@
+# Planted bugs for the checked design. Each one must make its property fail.
+run fv-tlc Reconciler.tla ResourceVersionCheck.cfg WitnessConverges.cfg
+properties NeverOvershoots EventuallyConverges
+file Reconciler.tla
+
+mutation the checked loop creates replicas without recording that it did
+detects NeverOvershoots
+-           /\ expectedCreates' = expectedCreates + gap
++          /\ expectedCreates' = expectedCreates
+
+mutation the cache stays possible to sync but nothing ever requires it
+detects EventuallyConverges
+- Work == ReconcileStale \/ ReconcileChecked \/ SyncCache
+- Next == Work \/ Done
++ Work == ReconcileStale \/ ReconcileChecked
++ Next == Work \/ SyncCache \/ Done
+
+harmless a comment on the checked reconcile action
+- \* Source: controller.reconcile(), subtracting creates it already issued
++ \* Source: controller.reconcile(). It subtracts creates it already issued

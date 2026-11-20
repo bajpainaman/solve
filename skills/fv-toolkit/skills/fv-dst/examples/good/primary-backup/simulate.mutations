@@ -1,0 +1,25 @@
+# Planted bugs for the primary-backup simulator. Each one must make the
+# chosen policy lose an acked write somewhere in the sweep.
+run python3 simulate.py --policy commit-after-replicate --sweep 500
+properties NeverAckedWriteLost
+file simulate.py
+
+mutation the chosen policy acks before the backup applies the write
+detects NeverAckedWriteLost
+-                 pending[entry[0]] = entry[1]
+-                 trace.append(f"tick {tick}: primary appends {entry} and waits for the backup")
++                pending[entry[0]] = entry[1]
++                acked.add(entry[0])
++                trace.append(f"tick {tick}: primary appends {entry} and waits for the backup")
+
+mutation a backup restart wipes its durable log instead of keeping it
+detects NeverAckedWriteLost
+-             backup.alive = True
+-             trace.append(f"tick {tick}: backup restarts with its durable log intact")
++            backup.alive = True
++            backup.log = []
++            trace.append(f"tick {tick}: backup restarts with its durable log intact")
+
+harmless a trace message is reworded
+-     trace.append(f"tick {steps}: primary crashes permanently; the backup is promoted")
++     trace.append(f"tick {steps}: primary fails for good; the backup takes over")

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# The cedar CLI is built from crates.io with cargo install. crates.io
+# checksums the package before cargo ever compiles it, so unlike the tla and
+# alloy jars there is no single downloaded file to hash here; --locked pins
+# every dependency to the crate's own published Cargo.lock, and the version
+# pin below is the integrity check.
+#
+# Usage: cedar [--check]
+#
+# Installs under $FV_HOME/cedar/ (default ~/.cache/fv/cedar/). Prints READY
+# cedar <path> (<version>), or UNAVAILABLE and exits 3 when cargo is missing
+# or the install fails. --check reports the state and installs nothing.
+set -uo pipefail
+
+CEDAR_VERSION=4.14.1
+FV_HOME="${FV_HOME:-$HOME/.cache/fv}"
+BIN="$FV_HOME/cedar/bin/cedar"
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "UNAVAILABLE cedar: install Rust's cargo (https://rustup.rs, or your package manager)"
+  exit 3
+fi
+
+installed_version() {
+  "$BIN" --version 2>/dev/null | sed -n 's/^cedar-policy-cli //p'
+}
+
+if [ -x "$BIN" ] && [ "$(installed_version)" = "$CEDAR_VERSION" ]; then
+  echo "READY cedar $BIN ($CEDAR_VERSION)"
+  exit 0
+fi
+
+if [ "${1:-}" = "--check" ]; then
+  echo "UNAVAILABLE cedar: not installed at $BIN; run fv-install cedar"
+  exit 3
+fi
+
+if ! cargo install cedar-policy-cli --locked --version "$CEDAR_VERSION" --root "$FV_HOME/cedar"; then
+  echo "UNAVAILABLE cedar: cargo install cedar-policy-cli --version $CEDAR_VERSION failed"
+  exit 3
+fi
+echo "READY cedar $BIN ($CEDAR_VERSION)"

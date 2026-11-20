@@ -1,0 +1,22 @@
+# Planted bugs for the blocking design. Each one must make its property fail.
+run fv-tlc TwoPhaseCommit.tla BlockOnCrash.cfg WitnessAllCommitted.cfg
+properties AllOrNothing EventuallyDecided
+file TwoPhaseCommit.tla
+
+mutation a manager can abort on its own, no matter what the coordinator decided
+detects AllOrNothing
+-     /\ tmState = "aborted" /\ rmState[rm] \in {"working", "prepared"}
++     /\ rmState[rm] \in {"working", "prepared"}
+
+mutation recovery stays possible but nothing ever requires it to happen
+detects EventuallyDecided
+- Work == (\E rm \in RM : Prepare(rm) \/ RMLearnCommit(rm) \/ RMLearnAbort(rm) \/ RMTimeoutAbort(rm))
+-          \/ TMCommit \/ TMAbort \/ Recover
+- Next == Work \/ Crash \/ Done
++ Work == (\E rm \in RM : Prepare(rm) \/ RMLearnCommit(rm) \/ RMLearnAbort(rm) \/ RMTimeoutAbort(rm))
++          \/ TMCommit \/ TMAbort
++ Next == Work \/ Crash \/ Recover \/ Done
+
+harmless a comment on the abort action
+- \* Source: coordinator.abort(), which the coordinator can choose at any
++ \* Source: coordinator.abort(). The coordinator can choose this at any

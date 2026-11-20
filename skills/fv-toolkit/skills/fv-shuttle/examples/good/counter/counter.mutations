@@ -1,0 +1,30 @@
+# Planted bugs for the counter. Each one must make its property fail under
+# the scheduler that catches it. CARGO_TARGET_DIR moves build output outside
+# the copy that fv-mutate makes, so the copy stays small and the build cache
+# is shared across every run.
+run export CARGO_TARGET_DIR="${FV_HOME:-$HOME/.cache/fv}/shuttle/target/counter"; RUSTFLAGS="--cfg shuttle" cargo test --quiet --lib; a=$?; RUSTFLAGS="--cfg loom" cargo test --quiet --lib; b=$?; [ "$a" = 0 ] && [ "$b" = 0 ]
+properties total_equals_thread_count_shuttle total_equals_thread_count_loom
+file src/lib.rs
+
+mutation the increment loses updates under a race
+detects total_equals_thread_count_shuttle
+-         self.total.fetch_add(1, Ordering::SeqCst);
++         { let v = self.total.load(Ordering::SeqCst); self.total.store(v + 1, Ordering::SeqCst); }
+
+mutation the same lost update also breaks the exhaustive check
+detects total_equals_thread_count_loom
+-         self.total.fetch_add(1, Ordering::SeqCst);
++         { let v = self.total.load(Ordering::SeqCst); self.total.store(v + 1, Ordering::SeqCst); }
+
+mutation the driver forgets to join every thread before reading the total
+detects total_equals_thread_count_shuttle
+-     for handle in handles {
+-         handle.join().unwrap();
+-     }
++     for handle in handles.into_iter().skip(1) {
++         handle.join().unwrap();
++     }
+
+harmless a comment on the atomic step
+-         self.total.fetch_add(1, Ordering::SeqCst);
++         self.total.fetch_add(1, Ordering::SeqCst); // one atomic read-modify-write

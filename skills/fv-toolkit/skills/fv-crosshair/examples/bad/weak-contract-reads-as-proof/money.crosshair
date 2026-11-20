@@ -1,0 +1,2 @@
+check WeakContractHolds money.split_evenly_weak expect holds
+check FullContractRefutesTheSameBug money.split_evenly_full expect refuted

@@ -1,0 +1,21 @@
+# Planted bugs for the gte-with-dedup design. Each one must make its
+# property fail.
+run fv-tlc WatermarkCursor.tla GteWithDedup.cfg WitnessSlowCommit.cfg
+properties ExactlyOnce EventuallyBothRan
+file WatermarkCursor.tla
+
+mutation the query drops back to a strict comparison against the cursor
+detects ExactlyOnce
+- Matches(r) == IF UsesGte THEN CT[r] >= cursor ELSE CT[r] > cursor
++ Matches(r) == CT[r] > cursor
+
+mutation the second run stays possible but nothing ever requires it to happen
+detects EventuallyBothRan
+- Work == CommitLate \/ Run1 \/ Run2
+- Next == Work \/ Done
++ Work == CommitLate \/ Run1
++ Next == Work \/ Run2 \/ Done
+
+harmless a comment on the dedup set
+- \* Source: loader.run(), one pass of the incremental query and cursor move.
++ \* Source: loader.run(). One pass of the incremental query and cursor move.

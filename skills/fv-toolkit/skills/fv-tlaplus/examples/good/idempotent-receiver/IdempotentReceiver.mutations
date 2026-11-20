@@ -1,0 +1,23 @@
+# Planted bugs for the transactional design. Each one must make its property fail.
+run fv-tlc IdempotentReceiver.tla OneTransaction.cfg WitnessAckAfterCrash.cfg
+properties AtMostOnce AckedImpliesApplied EventuallyAcked
+file IdempotentReceiver.tla
+
+mutation the transaction commits the effect without the dedup record
+detects AtMostOnce
+-     /\ effects' = effects + 1 /\ seen' = TRUE /\ pc' = "ack"
++     /\ effects' = effects + 1 /\ seen' = seen /\ pc' = "ack"
+
+mutation the transaction commits the dedup record without the effect
+detects AckedImpliesApplied
+-     /\ effects' = effects + 1 /\ seen' = TRUE /\ pc' = "ack"
++     /\ effects' = effects /\ seen' = TRUE /\ pc' = "ack"
+
+mutation a redelivered message is never acked
+detects EventuallyAcked
+-     /\ pc' = IF seen THEN "ack" ELSE "first"
++     /\ pc' = IF seen THEN "idle" ELSE "first"
+
+harmless a comment on the crash action
+- \* Fault: the consumer crashes and restarts.
++ \* Fault: the consumer crashes and restarts with its durable state.

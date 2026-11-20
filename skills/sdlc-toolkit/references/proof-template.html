@@ -1,0 +1,117 @@
+<!doctype html>
+<!-- The proof page for one feature. Copy this file to docs/sdlc/<slug>/proof/proof.html and replace every
+     word in CAPITALS. references/proof.md says what each section holds. Keep the section ids and their order. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proof: FEATURE TITLE</title>
+<style>
+  :root { --bg: #fbfaf7; --panel: #ffffff; --text: #1c1b22; --soft: #55536a; --line: #dddbe6; --pass: #17675d; --fail: #a13d14; --wait: #7a5a00; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #12131c; --panel: #1a1c2a; --text: #ece8df; --soft: #b3aec4; --line: #2e3147; --pass: #5fd8c6; --fail: #ff9a6b; --wait: #f0c060; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 52rem; margin: 0 auto; padding: 2.5rem 1rem 4rem; }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0.2rem 0 1.5rem; }
+  h2 { font-size: 1.15rem; margin: 0 0 0.8rem; }
+  .kicker, th { font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--soft); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 0.6rem; padding: 1.2rem 1.3rem; margin: 0 0 1rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.93rem; }
+  th, td { text-align: left; vertical-align: top; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); }
+  .scroll { overflow-x: auto; }
+  #criteria td:nth-child(2) { width: 36%; }
+  pre { margin: 0.4rem 0 0; padding: 0.7rem 0.9rem; overflow-x: auto; border: 1px solid var(--line); border-radius: 0.4rem; font: 0.85rem/1.5 ui-monospace, Menlo, monospace; }
+  code { font: 0.9em ui-monospace, Menlo, monospace; }
+  video, img { max-width: 100%; border: 1px solid var(--line); border-radius: 0.4rem; }
+  figure { margin: 0 0 1rem; }
+  figcaption, .source { font-size: 0.85rem; color: var(--soft); }
+  .pass { color: var(--pass); font-weight: 600; }
+  .fail { color: var(--fail); font-weight: 600; }
+  .wait { color: var(--wait); font-weight: 600; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.8rem; }
+  .cols > div { border: 1px solid var(--line); border-radius: 0.4rem; padding: 0.8rem 0.9rem; }
+  ol.steps > li { margin-bottom: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+  <p class="kicker">Proof &middot; stage 6, Test &amp; Prove</p>
+  <h1>FEATURE TITLE</h1>
+
+  <section id="verdict">
+    <h2>Verdict</h2>
+    <p><span class="pass">N OF M CRITERIA PASS</span>. THE ONE THING THE APPROVER MOST NEEDS TO KNOW.</p>
+    <p class="source">Branch <code>BRANCH</code> at <code>COMMIT</code> &middot; DATE &middot; Owner OWNER &middot; Approver APPROVER</p>
+  </section>
+
+  <section id="criteria">
+    <h2>Acceptance criteria</h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Id</th><th>Criterion</th><th>Evidence</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td>AC1</td><td>THE CRITERION</td><td>THE TEST, COMMAND OR SCREENSHOT</td><td class="pass">pass</td></tr>
+      </tbody>
+    </table></div>
+    <p class="source">From <code>verify.md</code></p>
+  </section>
+
+  <section id="demo">
+    <h2>Demo</h2>
+    <!-- A UI demo: <video controls src="demo.webm"></video>, or <img src="demo.gif" alt="...">, or one <figure> per screenshot.
+         A demo with no UI: the steps below. No demo: one line that says "No demo" and the approver's reason,
+         or that the demo waits on the approver's answer. -->
+    <ol class="steps">
+      <li>WHAT THE STEP SHOWS, AND ITS CRITERION
+        <pre>$ THE COMMAND THAT RAN
+THE OUTPUT THAT CAME BACK</pre></li>
+    </ol>
+    <p class="source">Recorder RECORDER &middot; ran on <code>COMMIT</code> &middot; from <code>proof/demo.md</code></p>
+  </section>
+
+  <section id="formal">
+    <h2>Formal checks</h2>
+    <!-- One block per confirmed property. A feature with no property ledger keeps the heading and one line that says so. -->
+    <p><strong>THE PROPERTY, AS ONE SENTENCE.</strong></p>
+    <div class="cols">
+      <div><p class="kicker">The design, modelled at RFC</p><p class="pass">holds, within the bounds below</p><p>BOUNDS AND FAULTS</p></div>
+      <div><p class="kicker">The code, modelled at Test</p><p class="fail">fails</p><p>BOUNDS AND FAULTS</p></div>
+    </div>
+    <ol class="steps">
+      <li>THE COUNTEREXAMPLE, ONE STEP PER ITEM, IN THE SYSTEM'S OWN WORDS</li>
+    </ol>
+    <p>WHY A PASS MEANS SOMETHING: THE CONFIG THAT MUST FAIL, THE WITNESS CONFIGS, THE PLANTED BUGS DETECTED.</p>
+    <p>WHAT THE CHECKS LEAVE OPEN.</p>
+    <pre>THE COMMANDS THAT RERUN THE CHECKS</pre>
+    <p class="source">From <code>fv/design/README.md</code> and <code>fv/code-report.md</code></p>
+  </section>
+
+  <section id="tests">
+    <h2>Tests</h2>
+    <p>THE SCENARIO, THE FINAL TESTS WITH THEIR RESULTS, THE TESTS ADDED TO CLOSE A GAP, AND WHAT THE AUDIT REMOVED OR MERGED.</p>
+    <p><strong>Verified:</strong> THE TESTING REPORT'S VERIFIED LINE, AS IT READS.</p>
+    <p class="source">From <code>testing/test.md</code> and <code>testing/audit.md</code></p>
+  </section>
+
+  <section id="verifier">
+    <h2>What the verifier saw</h2>
+    <p>WHAT IT RAN, WHAT IT SAW, AND EACH MISMATCH WITH THE PLAN OR THE SPEC.</p>
+    <p class="source">From <code>verify.md</code></p>
+  </section>
+
+  <section id="review">
+    <h2>Review</h2>
+    <p>THE FINAL REVIEW'S VERDICT AND TOTALS, AND EACH FINDING THAT IS STILL OPEN WITH ITS REASON.</p>
+    <p class="source">From <code>pr-review/REPORT</code></p>
+  </section>
+
+  <section id="gaps">
+    <h2>Not shown here</h2>
+    <ul>
+      <li>WHAT THE STAGE DIDN'T CHECK, AND WHAT A PASS DOESN'T COVER</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

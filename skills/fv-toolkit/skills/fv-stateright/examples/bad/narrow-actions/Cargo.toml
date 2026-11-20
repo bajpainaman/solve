@@ -1,0 +1,12 @@
+[package]
+name = "fv-stateright-real-run"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "narrow_actions"
+path = "src/lib.rs"
+
+[dependencies]
+stateright = "=0.31.0"

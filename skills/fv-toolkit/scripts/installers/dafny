@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Install Dafny as a local .NET tool, with the Z3 solver it needs, and
+# verify both.
+#
+# Usage: dafny [--check]
+#
+# Installs Dafny under $FV_HOME/dafny/ with `dotnet tool install --tool-path`,
+# and downloads a pinned Z3 build under $FV_HOME/dafny/z3-bin/, verified by
+# SHA-256. --check reports the state and installs nothing.
+#
+# The dotnet-tool package ships no solver (`dafny verify` alone fails with
+# "Z3 is not found"), so `fv-dafny` always passes --solver-path to the Z3
+# this script places. A Z3 build is pinned for macOS and for Linux, on arm64
+# and on x86_64. Set FV_Z3_URL and FV_Z3_SHA256 to install on another platform.
+#
+# Environment: FV_HOME (default ~/.cache/fv), FV_Z3_URL, FV_Z3_SHA256.
+set -uo pipefail
+
+FV_HOME="${FV_HOME:-$HOME/.cache/fv}"
+
+# To move a pin, change the version and the checksum together.
+DAFNY_VERSION=4.11.0
+Z3_VERSION=5.4.1
+Z3_BASE="https://github.com/Z3Prover/z3/releases/download/z3-$Z3_VERSION"
+PLATFORM="$(uname -s)/$(uname -m)"
+case "$PLATFORM" in
+  Darwin/arm64)  Z3_FILE="z3-$Z3_VERSION-arm64-osx-13.3.zip";   Z3_PIN=a4a878121e81dfc297d027dd0b51dc4f08feb4296d6ecace42bfbc87a29d6d58 ;;
+  Darwin/x86_64) Z3_FILE="z3-$Z3_VERSION-x64-osx-13.3.zip";     Z3_PIN=79e93b0564b82bf2c1b355df130bab543b1ff88d597c985632770fea05f1b249 ;;
+  Linux/x86_64)  Z3_FILE="z3-$Z3_VERSION-x64-glibc-2.39.zip";   Z3_PIN=b548bac48ef2452b4e09ea2945cf4b011d5f43fcf39e4799df268ee7e0769d85 ;;
+  Linux/aarch64) Z3_FILE="z3-$Z3_VERSION-arm64-glibc-2.38.zip"; Z3_PIN=9e8f781f15a423ede5bd491b665966dbb607d9f9c4f9f9b502116f271d1b050f ;;
+  *)             Z3_FILE=""; Z3_PIN="" ;;
+esac
+Z3_SHA256="${FV_Z3_SHA256:-$Z3_PIN}"
+Z3_URL="${FV_Z3_URL:-$Z3_BASE/$Z3_FILE}"
+
+HOME_DIR="$FV_HOME/dafny"
+Z3_BIN="$HOME_DIR/z3-bin/z3"
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+unavailable() {
+  echo "UNAVAILABLE dafny: $1"
+  exit 3
+}
+
+dafny_dll() {
+  find "$HOME_DIR/.store" -name Dafny.dll 2>/dev/null | head -1
+}
+
+check_only=0
+[ "${1:-}" = "--check" ] && check_only=1
+
+command -v dotnet >/dev/null 2>&1 ||
+  unavailable "install the dotnet SDK, or put it on PATH"
+
+if [ -z "${FV_Z3_URL:-}" ] && [ -z "$Z3_FILE" ]; then
+  unavailable "no Z3 build is pinned for $PLATFORM; set FV_Z3_URL and FV_Z3_SHA256"
+fi
+
+dll="$(dafny_dll)"
+if [ -n "$dll" ] && [ -x "$Z3_BIN" ]; then
+  echo "READY dafny $dll"
+  exit 0
+fi
+
+[ "$check_only" = 1 ] && unavailable "not installed; run fv-install dafny"
+
+if [ -z "$dll" ]; then
+  dotnet tool install dafny --tool-path "$HOME_DIR" --version "$DAFNY_VERSION" >/dev/null ||
+    unavailable "dotnet tool install dafny --version $DAFNY_VERSION failed"
+  dll="$(dafny_dll)"
+  [ -n "$dll" ] || unavailable "dotnet tool install reported success, but no Dafny.dll was found under $HOME_DIR"
+fi
+
+if [ ! -x "$Z3_BIN" ]; then
+  mkdir -p "$HOME_DIR/z3-bin"
+  zip_file="$FV_HOME/z3-$Z3_VERSION.zip"
+  if ! curl -fsSL -o "$zip_file.part" "$Z3_URL"; then
+    rm -f "$zip_file.part"
+    unavailable "the download from $Z3_URL failed"
+  fi
+  if [ "$(sha256 "$zip_file.part")" != "$Z3_SHA256" ]; then
+    rm -f "$zip_file.part"
+    unavailable "checksum of $Z3_URL differs from the pinned $Z3_SHA256"
+  fi
+  mv "$zip_file.part" "$zip_file"
+  unpack="$FV_HOME/z3-unpack-$Z3_VERSION"
+  rm -rf "$unpack" && mkdir -p "$unpack"
+  unzip -q "$zip_file" -d "$unpack"
+  z3_path="$(find "$unpack" -type f -name z3 -perm -u+x | head -1)"
+  [ -n "$z3_path" ] || z3_path="$(find "$unpack" -type f -name z3 | head -1)"
+  [ -n "$z3_path" ] || unavailable "the Z3 archive has no bin/z3 executable"
+  mv "$z3_path" "$Z3_BIN"
+  chmod +x "$Z3_BIN"
+  rm -rf "$zip_file" "$unpack"
+fi
+
+echo "READY dafny $dll"

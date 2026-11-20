@@ -1,0 +1,19 @@
+;; Source read at: 0000000
+;; Covers: cart/service.py
+;; The header shows the form of a sync record. This example describes no
+;; real repository, so the commit is a placeholder.
+;;
+;; expect: valid
+;; model: list-append
+;; consistency-models: strict-serializable
+;; anomalies: G0,G1a,G1b,G1c,G-single,G-single-process,G-single-realtime,G2-item
+;;
+;; Two carts, keyed 1 and 2. Process 0 adds item 10 to cart 1 and reads cart
+;; 2. Process 1 adds item 20 to cart 2 and reads cart 1, after process 0's
+;; transaction has already committed. Process 0 then rereads both carts.
+{:index 0, :type :invoke, :process 0, :value [[:append 1 10] [:r 2 nil]]}
+{:index 1, :type :ok,     :process 0, :value [[:append 1 10] [:r 2 []]]}
+{:index 2, :type :invoke, :process 1, :value [[:append 2 20] [:r 1 nil]]}
+{:index 3, :type :ok,     :process 1, :value [[:append 2 20] [:r 1 [10]]]}
+{:index 4, :type :invoke, :process 0, :value [[:r 1 nil] [:r 2 nil]]}
+{:index 5, :type :ok,     :process 0, :value [[:r 1 [10]] [:r 2 [20]]]}

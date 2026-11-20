@@ -1,0 +1,20 @@
+# Planted bugs in the chosen policy set. Each one must make its test fail.
+run fv-cedar policy.cedar schema.cedarschema tests.json
+properties alice_denied_secret_low_clearance alice_allowed_normal_same_department
+file policy.cedar
+
+mutation the clearance check is inverted, so low clearance is let through and high clearance is blocked
+detects alice_denied_secret_low_clearance
+-   resource.classification == "secret" && principal.clearance != "high"
++   resource.classification == "secret" && principal.clearance == "high"
+
+mutation the department check is inverted, so only a different department is allowed in
+detects alice_allowed_normal_same_department
+-   principal.department == resource.owningDepartment
++   principal.department != resource.owningDepartment
+
+harmless a comment on the forbid rule
+- // A secret document stays forbidden to anyone without high clearance, even
+- // inside the owning department.
++ // A secret document is forbidden without high clearance, even inside the
++ // owning department.

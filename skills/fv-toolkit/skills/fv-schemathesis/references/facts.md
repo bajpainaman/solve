@@ -1,0 +1,8 @@
+# Facts measured on schemathesis 4.33.4
+
+- `schema.as_state_machine().run()` infers stateful transitions from path-parameter correlation (for example, a response field named `id` feeding a path parameter named `item_id`) even when the OpenAPI schema declares no `links`. A run against `examples/bad/call-without-validate/app.py`, whose schema has no `links` block, still caught `ST301 Deleted resource still available` on the first run. Declaring `links` still names the transition and improves the failure message; it is not required for the walk to happen.
+- `use_after_free` and the other cross-call checks run by default inside `as_state_machine().run()`. Nothing extra needs to be passed to enable them.
+- A response declared with `"schema": {}` accepts any JSON body, so `response_schema_conformance` never fails against it, no matter what the app returns.
+- `case.call()` performs the HTTP call and returns the response; it runs no check at all. `case.call_and_validate()` is what runs `response_schema_conformance`, `not_a_server_error` and the rest of the default check set.
+- An operation whose `requestBody` has no `required: true` treats a request with an empty body as schema-valid. A server that then rejects the empty body with 400 fails `positive_data_acceptance`, which reads as an app bug when the schema is the thing that is wrong.
+- A path parameter typed `integer` is still fuzzed with values that are not integer-looking strings, to check that the app rejects them instead of crashing; an app that calls `int()` on a path segment without a `try`/`except` around it returns a 500 on this input.

@@ -1,0 +1,19 @@
+# Planted bugs in the recorded history. Each one must make the declared
+# outcome fail.
+run fv-elle History.edn
+properties G2-item G-single-item-realtime
+file History.edn
+
+mutation process 1 hides that process 0's append already committed
+detects G2-item
+- {:index 3, :type :ok,     :process 1, :value [[:append 2 20] [:r 1 [10]]]}
++ {:index 3, :type :ok,     :process 1, :value [[:append 2 20] [:r 1 []]]}
+
+mutation process 0's reread misses process 1's already-committed append
+detects G-single-item-realtime
+- {:index 5, :type :ok,     :process 0, :value [[:r 1 [10]] [:r 2 [20]]]}
++ {:index 5, :type :ok,     :process 0, :value [[:r 1 [10]] [:r 2 []]]}
+
+harmless extra whitespace in the first operation
+- {:index 0, :type :invoke, :process 0, :value [[:append 1 10] [:r 2 nil]]}
++ {:index 0, :type :invoke, :process 0, :value [[:append 1 10] [:r 2 nil]] }

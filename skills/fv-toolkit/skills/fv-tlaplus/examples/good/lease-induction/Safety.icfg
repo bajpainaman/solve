@@ -1,0 +1,5 @@
+\* expect: holds
+\* Step 3 of 3: StrongInv => Safety.
+INIT StrongInv
+INV Safety
+LENGTH 0

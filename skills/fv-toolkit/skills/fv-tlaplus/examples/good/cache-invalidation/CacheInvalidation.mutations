@@ -1,0 +1,14 @@
+# Planted bugs for the version-checked design. Each one must make its
+# property fail.
+run fv-tlc CacheInvalidation.tla VersionChecked.cfg WitnessFills.cfg
+properties NeverStaleAtRest
+file CacheInvalidation.tla
+
+mutation the invalidation leaves no version mark behind
+detects NeverStaleAtRest
+-     /\ cacheVersion' = IF Order = "version_check" THEN dbVersion ELSE cacheVersion
++     /\ cacheVersion' = cacheVersion
+
+harmless a comment on the fill action
+- \* earlier. The fault lets this land after the invalidation above. The
++ \* earlier. The fault lets the fill land after the invalidation above. The

@@ -1,0 +1,18 @@
+run python -m pytest -q -p no:cacheprovider test_bad_weak_property.py
+file allocate.py
+
+mutation the leftover cents are dropped
+detects test_allocate_returns_one_part_per_line
+-         parts[i] += 1
++         parts[i] += 0
+
+mutation every leftover cent goes to the first line
+detects test_allocate_returns_one_part_per_line
+-     for i in order[: total - sum(parts)]:
+-         parts[i] += 1
++     parts[0] += total - sum(parts)
+
+mutation a tie goes to the earlier line
+detects test_allocate_returns_one_part_per_line
+-     order = sorted(range(len(weights)), key=lambda i: (-remainders[i], -weights[i], i))
++     order = sorted(range(len(weights)), key=lambda i: (-remainders[i], i))

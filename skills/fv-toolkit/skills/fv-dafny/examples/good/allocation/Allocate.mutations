@@ -1,0 +1,21 @@
+# Planted bugs in the hand-written reference, not in the Dafny-proved core.
+# Each one must make the differential test fail, which confirms the test
+# would have caught the same disagreement if the bug had been in the core
+# instead.
+run python -m pytest -q -p no:cacheprovider test_differential.py
+properties test_dafny_matches_reference
+file reference.py
+
+mutation the leftover cents go to one index too many
+detects test_dafny_matches_reference
+-     return [share + 1 if i < leftover else share for i in range(n)]
++     return [share + 1 if i <= leftover else share for i in range(n)]
+
+mutation the leftover cents go to the last recipients instead of the first
+detects test_dafny_matches_reference
+-     return [share + 1 if i < leftover else share for i in range(n)]
++     return [share + 1 if i >= n - leftover else share for i in range(n)]
+
+harmless the docstring is reworded
+- """Split total evenly across n recipients. The first `total % n` recipients get one extra."""
++ """Split total evenly, largest remainders first."""

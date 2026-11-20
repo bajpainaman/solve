@@ -1,0 +1,19 @@
+# Planted bugs in the rewrite pairs. Each one must make the named check
+# miss its declared expectation.
+run fv-sqlequiv rewrites.sql
+properties DistinctEqualsGroupBy NotInEqualsNotExists
+file rewrites.sql
+
+mutation the group-by rewrite drops the group, so duplicates are no longer collapsed
+detects DistinctEqualsGroupBy
+- SELECT x FROM t GROUP BY x;
++ SELECT x FROM t;
+
+mutation the not-in query is accidentally rewritten to the same query_b, hiding the witness
+detects NotInEqualsNotExists
+- SELECT * FROM t1 WHERE x NOT IN (SELECT y FROM t2);
++ SELECT * FROM t1 WHERE NOT EXISTS (SELECT 1 FROM t2 WHERE t2.y = t1.x);
+
+harmless a check comment is reworded
+- -- Equivalent rewrite: DISTINCT and a GROUP BY on the same column collapse
++ -- Equivalent rewrite: a GROUP BY on the same column SQLite's DISTINCT uses.

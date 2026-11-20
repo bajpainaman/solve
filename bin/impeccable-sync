@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# impeccable-sync — fetch the impeccable design skill into impeccable/ at the pinned commit
+# impeccable-sync — kept for old instructions; same as `bin/vendor-sync impeccable`
 set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-exec python3 "$SCRIPT_DIR/../lib/solve_vendor.py" "$@"
+exec python3 "$SCRIPT_DIR/../lib/solve_vendor.py" impeccable "$@"

@@ -1,0 +1,18 @@
+# Planted bugs in the shipping tiers. Each one must make the named check miss its expectation.
+run fv-z3 shipping.py
+properties TiersAreComplete TiersAreUnique
+file shipping.py
+
+mutation tier B's upper bound narrows, leaving a gap before tier C starts
+detects TiersAreComplete
+-     return And(w >= 500, w < 2_000)
++     return And(w >= 500, w < 1_900)
+
+mutation tier C's lower bound drops into tier B, so the two now overlap
+detects TiersAreUnique
+-     return And(w >= 2_000, w <= MAX_WEIGHT)
++     return And(w >= 1_900, w <= MAX_WEIGHT)
+
+harmless a comment is reworded
+- """Tier A: 0 g up to 500 g."""
++ """Tier A: the lightest packages, up to 500 g."""

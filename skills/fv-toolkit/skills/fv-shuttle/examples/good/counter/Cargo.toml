@@ -1,0 +1,23 @@
+[package]
+name = "fv-shuttle-counter"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "counter"
+path = "src/lib.rs"
+
+[dev-dependencies]
+shuttle = "=0.9.10"
+loom = "=0.7.3"
+
+[lints.rust]
+# This crate selects its sync primitives with --cfg loom and --cfg shuttle,
+# which rustc's check-cfg lint does not know about.
+unexpected_cfgs = "allow"
+
+[profile.dev]
+# Loom's exhaustive search runs the body many times; an unoptimized build
+# makes that slow enough to matter even for two threads and one atomic op.
+opt-level = 2

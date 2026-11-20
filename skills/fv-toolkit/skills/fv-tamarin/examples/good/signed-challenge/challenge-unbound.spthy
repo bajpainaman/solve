@@ -1,0 +1,46 @@
+/*
+ * Source read at: 0000000
+ * Covers: no real repository.
+ *
+ * The rejected design: the client signs a fixed value instead of the
+ * challenge it was sent. A signature the attacker captured once verifies
+ * against every later challenge, because it never mentions which one it
+ * was for.
+ */
+theory ChallengeResponseUnbound
+begin
+
+builtins: signing
+
+rule Register_key:
+  [ Fr(~ltkA) ]
+  --[ KeyGen($A) ]->
+  [ !Ltk($A, ~ltkA), !Pk($A, pk(~ltkA)), Out(pk(~ltkA)) ]
+
+rule Server_Challenge:
+  [ Fr(~n) ]
+  --[ Challenge($S, $A, ~n) ]->
+  [ Out(~n), St_Server($S, $A, ~n) ]
+
+// The client signs a fixed value, never the challenge it was sent.
+rule Client_Respond:
+  [ !Ltk($A, ltkA), In(n) ]
+  --[ Responded($A, n) ]->
+  [ Out(<$A, sign('ok', ltkA)>) ]
+
+rule Server_Accept:
+  [ St_Server($S, $A, ~n), !Pk($A, pkA), In(<$A, sig>) ]
+  --[ Eq(verify(sig, 'ok', pkA), true), Accept($S, $A, ~n) ]->
+  [ ]
+
+restriction Equality:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+// The same claim as challenge.spthy's Authentication, stated over this
+// design's actions. It must be falsified.
+// expect: falsified
+lemma Authentication:
+  "All S A n #i. Accept(S, A, n) @ i
+    ==> (Ex #j. Responded(A, n) @ j & j < i)"
+
+end

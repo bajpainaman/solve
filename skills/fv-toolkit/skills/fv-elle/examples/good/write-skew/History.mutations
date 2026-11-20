@@ -1,0 +1,20 @@
+# Planted "fixes" to the recorded write skew. Each one must make the
+# declared anomaly stop reproducing, which flips the outcome and fails
+# the check that expects it.
+run fv-elle History.edn
+properties G2-item G1c-realtime
+file History.edn
+
+mutation process 1 waits for process 0's already-committed append
+detects G2-item
+- {:index 3, :type :ok,     :process 1, :value [[:append 2 20] [:r 1 []]]}
++ {:index 3, :type :ok,     :process 1, :value [[:append 2 20] [:r 1 [10]]]}
+
+mutation process 0 claims to see process 1's append before process 1 made it
+detects G1c-realtime
+- {:index 1, :type :ok,     :process 0, :value [[:append 1 10] [:r 2 []]]}
++ {:index 1, :type :ok,     :process 0, :value [[:append 1 10] [:r 2 [20]]]}
+
+harmless extra whitespace in the first operation
+- {:index 0, :type :invoke, :process 0, :value [[:append 1 10] [:r 2 nil]]}
++ {:index 0, :type :invoke, :process 0, :value [[:append 1 10] [:r 2 nil]] }

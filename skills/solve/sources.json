@@ -6,6 +6,24 @@
     {"id": "html-effectiveness", "mode": "vendored", "repo": "https://github.com/ThariqS/html-effectiveness.git", "ref": "1787245d94aa680edf18b52027e3f859032776ba", "path": "templates/html-effectiveness"},
     {"id": "simplify-writing", "mode": "vendored", "repo": "https://github.com/bajpainaman/simplify-writing.git", "ref": "354702468dcbc36a6bbec102de5c42b5dc6148e5", "path": "write"},
     {"id": "cdpi", "mode": "vendored", "repo": "https://github.com/bajpainaman/cdpi.git", "ref": "dcb9fcff0f5fcb14083f6606ed165ea020f8162f", "path": "skills/cdpi"},
-    {"id": "impeccable", "mode": "vendored", "repo": "https://github.com/pbakaus/impeccable.git", "ref": "d41d9860b0094dcb68030657da63461212835aaa", "path": "skills/impeccable", "sync": "bin/impeccable-sync"}
+    {"id": "impeccable", "mode": "vendored", "repo": "https://github.com/pbakaus/impeccable.git", "ref": "d41d9860b0094dcb68030657da63461212835aaa", "path": "skills/impeccable", "sync": "bin/vendor-sync impeccable",
+     "vendor": {"from": "plugin/skills/impeccable", "keep": ["LICENSE", "NOTICE.md"], "required": ["SKILL.md", "scripts/impeccable", "reference/craft-floor.md"],
+                "license": "Apache-2.0", "license_sha256": "02bb8c3b4e70190e3986c0404ad2fd8d639b4f534252d82379cc1b502b6d1812"}},
+    {"id": "testing-toolkit", "mode": "vendored", "repo": "https://github.com/aasimsani/testing-toolkit.git", "ref": "b8572752f50e13dc627f9b5e3dc7f941f1f73132", "path": "skills/testing-toolkit", "sync": "bin/vendor-sync testing-toolkit",
+     "vendor": {"from": "plugins/testing-toolkit", "keep": ["LICENSE"], "required": ["skills/testing/SKILL.md", "references/scenario-playbooks.md"],
+                "exclude": ["evals", ".claude-plugin", ".codex-plugin", "hooks"], "wrapper": "plugin/wrappers/testing-toolkit",
+                "license": "MIT", "license_sha256": "e4d480360103fdfff8da7b1143bddcd3493fb679efea3172e6bc887a371de539"}},
+    {"id": "fv-toolkit", "mode": "vendored", "repo": "https://github.com/aasimsani/formal-verification-toolkit.git", "ref": "370bca08f928ff98b9324d0e774dc732e2ddd9f8", "path": "skills/fv-toolkit", "sync": "bin/vendor-sync fv-toolkit",
+     "vendor": {"from": "plugins/fv-toolkit", "keep": ["LICENSE", "NOTICE.md"], "required": ["skills/formal-verification/SKILL.md", "references/skills.md", "scripts/fv-install"],
+                "exclude": ["evals", ".claude-plugin", ".codex-plugin", "hooks"], "wrapper": "plugin/wrappers/fv-toolkit",
+                "license": "MIT", "license_sha256": "e4d480360103fdfff8da7b1143bddcd3493fb679efea3172e6bc887a371de539"}},
+    {"id": "sdlc-toolkit", "mode": "vendored", "repo": "https://github.com/aasimsani/sdlc-toolkit.git", "ref": "e539b580385671ab3a959de6fa458560b65c48c6", "path": "skills/sdlc-toolkit", "sync": "bin/vendor-sync sdlc-toolkit",
+     "vendor": {"from": "plugins/sdlc", "keep": ["LICENSE"], "required": ["skills/sdlc/SKILL.md", "references/stage-rules.md"],
+                "exclude": ["evals", ".claude-plugin", ".codex-plugin", "hooks"], "wrapper": "plugin/wrappers/sdlc-toolkit",
+                "license": "MIT", "license_sha256": "e4d480360103fdfff8da7b1143bddcd3493fb679efea3172e6bc887a371de539"}},
+    {"id": "pr-review", "mode": "vendored", "repo": "https://github.com/aasimsani/pr-review.git", "ref": "bc8ae5299ee0935558f645537024d31e2a5bbb4b", "path": "skills/pr-review", "sync": "bin/vendor-sync pr-review",
+     "vendor": {"from": "plugins/pr-review", "keep": ["LICENSE"], "required": ["skills/pr-review/SKILL.md", "skills/pr-review/pr-review.sh"],
+                "exclude": ["evals", ".claude-plugin", ".codex-plugin", "hooks"], "wrapper": "plugin/wrappers/pr-review",
+                "license": "MIT", "license_sha256": "e4d480360103fdfff8da7b1143bddcd3493fb679efea3172e6bc887a371de539"}}
   ]
 }

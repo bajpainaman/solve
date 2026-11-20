@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Install elle-cli, the standalone front end to Jepsen's Elle, and verify it.
+#
+# Usage: elle [--check]
+#
+# Installs the pinned, standalone jar from ligurio/elle-cli under
+# $FV_HOME/elle/, verified by SHA-256. --check reports the state and
+# installs nothing. elle-cli needs no Clojure or Leiningen install; the
+# release zip already holds a runnable uberjar.
+#
+# Environment: FV_HOME (default ~/.cache/fv), JAVA (default java),
+# FV_ELLE_URL (overrides the release URL, for tests).
+set -uo pipefail
+
+FV_HOME="${FV_HOME:-$HOME/.cache/fv}"
+JAVA="${JAVA:-java}"
+
+# To move a pin, change the version and the checksum together. 0.1.11 is the
+# latest release, but its uberjar needs java.util.SequencedCollection, added
+# in JDK 21; 0.1.9 is the newest one this installer found that runs on JDK 20.
+VERSION=0.1.9
+SHA256=7bb21b1c68580cd63816abee7655c68023b837bcca91eac9025674e4fe1ff12c
+URL="${FV_ELLE_URL:-https://github.com/ligurio/elle-cli/releases/download/$VERSION/elle-cli-bin-$VERSION.zip}"
+
+HOME_DIR="$FV_HOME/elle"
+JAR="$HOME_DIR/elle-cli.jar"
+
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+unavailable() {
+  echo "UNAVAILABLE elle: $1"
+  exit 3
+}
+
+check_only=0
+[ "${1:-}" = "--check" ] && check_only=1
+
+"$JAVA" -version >/dev/null 2>&1 ||
+  unavailable "install a JDK 11 to 20 (elle-cli $VERSION runs on JDK 20; the newer 0.1.11 needs JDK 21), or set JAVA to its java binary"
+
+if [ -f "$JAR" ]; then
+  echo "READY elle $JAR"
+  exit 0
+fi
+
+[ "$check_only" = 1 ] && unavailable "not installed; run fv-install elle"
+
+mkdir -p "$HOME_DIR"
+zip_file="$FV_HOME/elle-cli-bin-$VERSION.zip"
+if ! curl -fsSL -o "$zip_file.part" "$URL"; then
+  rm -f "$zip_file.part"
+  unavailable "the download from $URL failed"
+fi
+if [ "$(sha256 "$zip_file.part")" != "$SHA256" ]; then
+  rm -f "$zip_file.part"
+  unavailable "checksum of $URL differs from the pinned $SHA256"
+fi
+mv "$zip_file.part" "$zip_file"
+unzip -q -o "$zip_file" -d "$FV_HOME/elle-cli-unpack-$VERSION" "target/elle-cli-$VERSION-standalone.jar"
+mv "$FV_HOME/elle-cli-unpack-$VERSION/target/elle-cli-$VERSION-standalone.jar" "$JAR"
+rm -rf "$zip_file" "$FV_HOME/elle-cli-unpack-$VERSION"
+echo "READY elle $JAR"

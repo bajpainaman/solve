@@ -1,0 +1,34 @@
+[
+  {
+    "name": "alice_allowed_normal_same_department",
+    "request": {
+      "principal": "User::\"alice\"",
+      "action": "Action::\"viewDocument\"",
+      "resource": "Document::\"d1\"",
+      "context": {}
+    },
+    "entities": [
+      {"uid": {"type": "User", "id": "alice"}, "attrs": {"department": "eng", "clearance": "low"}, "parents": []},
+      {"uid": {"type": "Document", "id": "d1"}, "attrs": {"owningDepartment": "eng", "classification": "normal"}, "parents": []}
+    ],
+    "decision": "allow",
+    "reason": ["policy1"],
+    "num_errors": 0
+  },
+  {
+    "name": "alice_denied_secret_low_clearance",
+    "request": {
+      "principal": "User::\"alice\"",
+      "action": "Action::\"viewDocument\"",
+      "resource": "Document::\"d2\"",
+      "context": {}
+    },
+    "entities": [
+      {"uid": {"type": "User", "id": "alice"}, "attrs": {"department": "eng", "clearance": "low"}, "parents": []},
+      {"uid": {"type": "Document", "id": "d2"}, "attrs": {"owningDepartment": "eng", "classification": "secret"}, "parents": []}
+    ],
+    "decision": "deny",
+    "reason": ["policy2"],
+    "num_errors": 0
+  }
+]

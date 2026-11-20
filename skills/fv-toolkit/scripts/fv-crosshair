@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""Run every command of a CrossHair manifest and compare it with its declared expectation.
+
+Usage: fv-crosshair <name.crosshair>
+
+A manifest lists one command per line, each naming a function by its
+importable, dotted path (the same syntax `crosshair check` itself takes).
+The target resolves against the manifest's own directory, because that is
+where crosshair looks for the module:
+
+  check <Name> <module.qualname> expect holds
+  check <Name> <module.qualname> expect refuted
+  diff <Name> <module.qualname1> <module.qualname2> expect holds
+  diff <Name> <module.qualname1> <module.qualname2> expect differs
+
+`check` runs `crosshair check <target>`. "holds" means CrossHair found no
+counterexample to the function's contract within its search budget;
+"refuted" means it found one. `diff` runs `crosshair diffbehavior <target1>
+<target2>`. "holds" means the two functions agreed on every input CrossHair
+tried; "differs" means it found one where they disagree.
+
+The script prints one line per command:
+
+  PASS check <name>: holds
+  FAIL check <name>: expected holds, got refuted
+
+A FAIL is followed by CrossHair's own counterexample line.
+
+"holds" is never a proof that the property is true, only that no
+counterexample turned up in the time given. State the search budget in the
+report, the same way a TLC run states its scope.
+
+Exit codes: 0 when every command passes, 1 on a FAIL or an ERROR, 2 on a
+usage error, and 3 when uv or the pinned crosshair-tool is unavailable.
+
+Environment: FV_CROSSHAIR_PIN (default crosshair-tool==0.0.113),
+FV_CROSSHAIR_TIMEOUT, seconds given to --per_condition_timeout (default 10).
+"""
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+LINE = re.compile(
+    r"^(?P<kind>check|diff)\s+(?P<name>\S+)\s+(?P<t1>\S+)(?:\s+(?P<t2>\S+))?\s+expect\s+(?P<expect>holds|refuted|differs)\s*$"
+)
+
+
+def parse(text):
+    """Return one dict per command line, in file order."""
+    commands = []
+    for number, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = LINE.match(line)
+        if not match:
+            raise ValueError(
+                f"line {number}: does not match 'check <Name> <target> expect <holds|refuted>' "
+                "or 'diff <Name> <target1> <target2> expect <holds|differs>'"
+            )
+        command = match.groupdict()
+        if command["kind"] == "check" and command["t2"]:
+            raise ValueError(f"line {number}: a check command takes one target")
+        if command["kind"] == "diff" and not command["t2"]:
+            raise ValueError(f"line {number}: a diff command takes two targets")
+        commands.append(command)
+    return commands
+
+
+def last_line(output):
+    lines = output.strip().splitlines()
+    return lines[-1].strip() if lines else "no output"
+
+
+def run_crosshair(pin, kind, timeout, targets, cwd):
+    """Run from `cwd`, because crosshair resolves a dotted target against its own working directory."""
+    sub = "check" if kind == "check" else "diffbehavior"
+    return subprocess.run(
+        ["uv", "run", "--quiet", "--no-project", "--with", pin,
+         "crosshair", sub, f"--per_condition_timeout={timeout}", *targets],
+        capture_output=True, text=True, cwd=cwd,
+    )
+
+
+def main(argv):
+    if len(argv) != 1 or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
+    path = Path(argv[0])
+    if not path.is_file():
+        print(f"usage: fv-crosshair <name.crosshair>\n{path} is not a file", file=sys.stderr)
+        return 2
+    try:
+        commands = parse(path.read_text())
+    except ValueError as error:
+        print(f"usage: fv-crosshair <name.crosshair>\n{path.name}: {error}", file=sys.stderr)
+        return 2
+    if not commands:
+        print(f"ERROR {path.name}: no check or diff command is declared")
+        return 1
+
+    if not shutil.which("uv"):
+        print("UNAVAILABLE crosshair: uv is not on PATH; install uv (https://docs.astral.sh/uv/) and run fv-install crosshair")
+        return 3
+
+    pin = os.environ.get("FV_CROSSHAIR_PIN", "crosshair-tool==0.0.113")
+    timeout = os.environ.get("FV_CROSSHAIR_TIMEOUT", "10")
+
+    failed = False
+    unavailable = False
+    for command in commands:
+        kind, name, expected = command["kind"], command["name"], command["expect"]
+        targets = [command["t1"]] if kind == "check" else [command["t1"], command["t2"]]
+        run = run_crosshair(pin, kind, timeout, targets, path.resolve().parent)
+        output = run.stdout + run.stderr
+        if run.returncode == 2:
+            print(f"ERROR {kind} {name}: {last_line(output)}")
+            failed = True
+            continue
+        if run.returncode not in (0, 1):
+            unavailable = True
+            continue
+        outcome = "holds" if run.returncode == 0 else ("refuted" if kind == "check" else "differs")
+        passed = outcome == expected
+        print(f"{'PASS' if passed else 'FAIL'} {kind} {name}: "
+              + (outcome if passed else f"expected {expected}, got {outcome}"))
+        if not passed and output.strip():
+            print("\n".join("  " + line for line in output.strip().splitlines()))
+        failed = failed or not passed
+
+    if unavailable:
+        print(f"UNAVAILABLE crosshair: uv could not run with {pin}; check network access or run fv-install crosshair")
+        return 3
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

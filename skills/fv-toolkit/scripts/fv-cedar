@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Run cedar run-tests and print one verdict line per test case.
+
+Usage: fv-cedar <Policies.cedar> <Schema.cedarschema> <Tests.json>
+
+Each test case in the tests file declares a principal, action, resource,
+entities and the decision ("allow" or "deny") the policies must produce.
+cedar's own output has one line per test:
+
+  test <name> ... ok
+  test <name> ... fail: expected <Decision>, got <Decision>
+  test <name> ... error: <reason>
+
+This script reprints each as:
+
+  PASS test <name>: ok
+  FAIL test <name>: expected <Decision>, got <Decision>
+  ERROR test <name>: <reason>
+
+A policy or schema that fails to parse never reaches a per-test line; the
+whole run is then one ERROR for the run, not a violation of any test.
+
+Exit codes: 0 when every test passes, 1 on a FAIL or an ERROR, 2 on a usage
+error, and 3 when the cedar binary is missing.
+
+Environment: FV_HOME (default ~/.cache/fv).
+"""
+import os
+import re
+import sys
+from pathlib import Path
+from subprocess import run
+
+TEST_LINE = re.compile(r"^\s*test (.+?) \.\.\. (ok|fail: .+|error: .+)$")
+
+
+def main(argv):
+    if len(argv) != 3 or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
+    policies, schema, tests = (Path(a).resolve() for a in argv)
+    for path in (policies, schema, tests):
+        if not path.is_file():
+            print(f"usage: fv-cedar <Policies.cedar> <Schema.cedarschema> <Tests.json>\n{path} is not a file", file=sys.stderr)
+            return 2
+
+    cedar = Path(os.environ.get("FV_HOME", Path.home() / ".cache" / "fv")) / "cedar" / "bin" / "cedar"
+    if not cedar.is_file():
+        print(f"UNAVAILABLE cedar: {cedar} is missing; run fv-install cedar")
+        return 3
+
+    result = run(
+        [str(cedar), "-f", "plain", "run-tests",
+         "-p", str(policies), "-s", str(schema), "--tests", str(tests)],
+        capture_output=True, text=True,
+    )
+    output = result.stdout + result.stderr
+    lines = [TEST_LINE.match(line) for line in output.splitlines()]
+    matches = [m for m in lines if m]
+    if not matches:
+        print(f"ERROR {tests.name}: {output.strip().splitlines()[0] if output.strip() else 'cedar produced no output'}")
+        return 1
+
+    failed = False
+    for match in matches:
+        name, outcome = match.groups()
+        if outcome == "ok":
+            print(f"PASS test {name}: ok")
+        elif outcome.startswith("fail: "):
+            print(f"FAIL test {name}: {outcome[len('fail: '):]}")
+            failed = True
+        else:
+            print(f"ERROR test {name}: {outcome[len('error: '):]}")
+            failed = True
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

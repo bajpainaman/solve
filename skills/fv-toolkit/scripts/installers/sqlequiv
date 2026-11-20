@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# fv-install sqlequiv: check for a Python 3 whose stdlib has sqlite3.
+#
+# VeriEQL (github.com/VeriEQL/VeriEQL) is licensed CC BY-NC-SA 4.0, which
+# does not permit vendoring or wrapping it here. fv-sqlequiv is this
+# project's own stdlib-only checker instead, so there is nothing to
+# download or pin; --check and the no-argument form report the same state.
+#
+# Usage: installers/sqlequiv [--check]
+# Environment: FV_PYTHON (default python3).
+set -uo pipefail
+
+PY="${FV_PYTHON:-python3}"
+if ! command -v "$PY" >/dev/null 2>&1; then
+  echo "UNAVAILABLE sqlequiv: $PY is not on PATH; install Python 3.9 or later"
+  exit 3
+fi
+if ! "$PY" -c 'import sqlite3' >/dev/null 2>&1; then
+  echo "UNAVAILABLE sqlequiv: $PY has no sqlite3 module; install a Python built with sqlite3 support"
+  exit 3
+fi
+version="$("$PY" --version 2>&1)"
+echo "READY sqlequiv $version"

@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""Run every check_* function of a Z3 check file and compare it with its declared expectation.
+
+Usage: fv-z3 <check_file.py>
+
+A check file defines one function per check, named check_<Name>, that takes no
+arguments and returns a z3.Solver with its constraints already added. The
+function's docstring carries one line that declares what the solver must find:
+
+    def check_RuleTableIsComplete():
+        '''Every weight in range matches at least one rule.
+
+        expect: unsat
+        '''
+        s = Solver()
+        s.add(Not(Or(rule_a(w), rule_b(w), rule_c(w))))
+        return s
+
+The script runs the checks in the order they are defined, through an isolated
+z3-solver install, and prints one line per check:
+
+  PASS check <name>: unsat
+  FAIL check <name>: expected unsat, got sat
+
+An unexpected sat is followed by the model, so a counterexample reads back into
+the system without opening a second tool.
+
+z3.unknown is never read as a pass or a fail. A theory z3 cannot decide, such as
+nonlinear integer arithmetic, can return unknown instead of an answer, and a
+check that reads "not unsat" as a pass would call that a pass too. This script
+always reports it as ERROR, with the reason z3 gives.
+
+Exit codes: 0 when every check passes, 1 on a FAIL or an ERROR, 2 on a usage
+error, and 3 when uv or the pinned z3-solver is unavailable.
+
+Environment: FV_Z3_PIN (default z3-solver==5.4.1).
+"""
+import inspect
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+EXPECT = re.compile(r"^\s*expect:\s*(sat|unsat)\s*$", re.MULTILINE)
+
+
+def run_checks(path):
+    """Import the check file inside the isolated z3 environment and print its verdicts."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("fv_z3_checkfile", path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        print(f"ERROR {os.path.basename(path)}: {type(exc).__name__}: {exc}")
+        return 1
+
+    checks = [
+        (name[len("check_"):], func)
+        for name, func in vars(module).items()
+        if name.startswith("check_") and callable(func)
+    ]
+    checks.sort(key=lambda item: item[1].__code__.co_firstlineno)
+    if not checks:
+        print(f"ERROR {os.path.basename(path)}: no check_* function is defined")
+        return 1
+
+    failed = False
+    for name, func in checks:
+        doc = inspect.getdoc(func) or ""
+        match = EXPECT.search(doc)
+        if not match:
+            print(f"ERROR check {name}: its docstring has no 'expect: sat' or 'expect: unsat' line")
+            failed = True
+            continue
+        expected = match.group(1)
+        try:
+            solver = func()
+            result = str(solver.check())
+        except Exception as exc:
+            print(f"ERROR check {name}: {type(exc).__name__}: {exc}")
+            failed = True
+            continue
+        if result == "unknown":
+            print(f"ERROR check {name}: z3 returned unknown ({solver.reason_unknown()})")
+            failed = True
+            continue
+        passed = result == expected
+        print(f"{'PASS' if passed else 'FAIL'} check {name}: "
+              + (result if passed else f"expected {expected}, got {result}"))
+        if result == "sat":
+            model = solver.model()
+            print("  " + ", ".join(f"{d.name()} = {model[d]}" for d in model.decls()))
+        failed = failed or not passed
+    return 1 if failed else 0
+
+
+def main(argv):
+    if os.environ.get("_FV_Z3_RUN_CHECKS") == "1":
+        return run_checks(argv[0])
+
+    if len(argv) != 1 or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if argv and argv[0] in ("-h", "--help") else 2
+    path = Path(argv[0])
+    if not path.is_file():
+        print(f"usage: fv-z3 <check_file.py>\n{path} is not a file", file=sys.stderr)
+        return 2
+
+    if not shutil.which("uv"):
+        print("UNAVAILABLE z3: uv is not on PATH; install uv (https://docs.astral.sh/uv/) and run fv-install z3")
+        return 3
+
+    pin = os.environ.get("FV_Z3_PIN", "z3-solver==5.4.1")
+    env = dict(os.environ, _FV_Z3_RUN_CHECKS="1")
+    run = subprocess.run(
+        ["uv", "run", "--quiet", "--no-project", "--with", pin, str(Path(__file__).resolve()), str(path.resolve())],
+        env=env,
+    )
+    if run.returncode not in (0, 1):
+        print(f"UNAVAILABLE z3: uv could not run with {pin} (exit {run.returncode}); "
+              "check network access or run fv-install z3")
+        return 3
+    return run.returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,18 @@
+// Source read at: 0000000
+// Covers: examples/bad/shadowed-permit/ (this example describes no real
+// repository, so the commit is a placeholder)
+
+entity User = {
+  department: String,
+  clearance: String,
+};
+
+entity Document = {
+  owningDepartment: String,
+  classification: String,
+};
+
+action viewDocument appliesTo {
+  principal: [User],
+  resource: [Document],
+};

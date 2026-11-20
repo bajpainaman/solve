@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# fv-install xstate: install a pinned xstate and @xstate/graph under $FV_HOME,
+# never globally and never into the project's own node_modules.
+#
+# Usage: installers/xstate [--check]
+# Environment: FV_HOME (default ~/.cache/fv), NODE (default node), NPM (default npm).
+set -uo pipefail
+
+FV_HOME="${FV_HOME:-$HOME/.cache/fv}"
+DIR="$FV_HOME/xstate"
+NODE="${NODE:-node}"
+NPM="${NPM:-npm}"
+
+# To move a pin, change both versions together.
+XSTATE_VERSION=5.33.4
+GRAPH_VERSION=3.0.4
+
+installed_version() {
+  "$NODE" -e "try { console.log(require('$1/package.json').version) } catch { process.exit(1) }" 2>/dev/null
+}
+
+ready() {
+  [ "$(installed_version "$DIR/node_modules/xstate")" = "$XSTATE_VERSION" ] &&
+    [ "$(installed_version "$DIR/node_modules/@xstate/graph")" = "$GRAPH_VERSION" ]
+}
+
+if ready; then
+  echo "READY xstate $DIR (xstate@$XSTATE_VERSION @xstate/graph@$GRAPH_VERSION)"
+  exit 0
+fi
+
+if [ "${1:-}" = "--check" ]; then
+  echo "UNAVAILABLE xstate: not installed; run fv-install xstate"
+  exit 3
+fi
+
+command -v "$NODE" >/dev/null 2>&1 ||
+  { echo "UNAVAILABLE xstate: $NODE is not on PATH; install Node 18 or later"; exit 3; }
+command -v "$NPM" >/dev/null 2>&1 ||
+  { echo "UNAVAILABLE xstate: $NPM is not on PATH; install npm"; exit 3; }
+
+mkdir -p "$DIR"
+if ! "$NPM" install --prefix "$DIR" --no-save --no-audit --no-fund \
+    "xstate@$XSTATE_VERSION" "@xstate/graph@$GRAPH_VERSION" >"$DIR/../xstate-install.log" 2>&1; then
+  echo "UNAVAILABLE xstate: npm install failed; see $DIR/../xstate-install.log"
+  exit 3
+fi
+
+if ready; then
+  echo "READY xstate $DIR"
+else
+  echo "UNAVAILABLE xstate: npm installed a version other than the pin $XSTATE_VERSION/$GRAPH_VERSION"
+  exit 3
+fi

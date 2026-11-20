@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""Report whether the code a model covers has changed since the model was read against it.
+
+Usage: fv-drift <model file or directory> ...
+
+A model that passes says nothing about code that changed after the model was
+written. Each model therefore records its sync point in two comment lines, in
+the comment syntax of its own language:
+
+  Source read at: <commit>
+  Covers: <path>[, <path> ...]       paths relative to the repository root
+
+The script prints one line per model:
+
+  IN SYNC <model>                    no commit touched the covered paths since the sync commit
+  CHANGED <model>: <n> commits since <commit>
+  NO RECORD <model>: <reason>        the header is missing or names an unknown commit
+
+A CHANGED line is followed by the commits to read. A directory argument is
+searched for files that carry a 'Source read at:' line.
+
+Exit codes: 0 when every model is IN SYNC, 1 otherwise, 2 on a usage error.
+"""
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+SYNC = re.compile(r"Source read at:\s*([0-9a-fA-F]{7,40})")
+COVERS = re.compile(r"Covers:\s*(.+?)\s*$", re.MULTILINE)
+
+
+def git(directory, *args):
+    return subprocess.run(["git", "-C", str(directory), *args], capture_output=True, text=True)
+
+
+def models_in(argument):
+    path = Path(argument).resolve()
+    if path.is_file():
+        return [path]
+    found = []
+    for candidate in sorted(path.rglob("*")):
+        if ".git" in candidate.parts or not candidate.is_file() or candidate.stat().st_size > 1_000_000:
+            continue
+        try:
+            if "Source read at:" in candidate.read_text():
+                found.append(candidate)
+        except (UnicodeDecodeError, OSError):
+            continue
+    return found
+
+
+def status(model):
+    """Return (verdict, detail lines) for one model file."""
+    text = model.read_text()
+    sync, covers = SYNC.search(text), COVERS.search(text)
+    if not sync or not covers:
+        return "NO RECORD", ["the file has no 'Source read at:' and 'Covers:' lines"]
+    top = git(model.parent, "rev-parse", "--show-toplevel")
+    if top.returncode != 0:
+        return "NO RECORD", ["the file is not inside a git repository"]
+    commit = sync.group(1)
+    paths = [p.strip() for p in covers.group(1).split(",") if p.strip()]
+    log = git(top.stdout.strip(), "log", "--oneline", f"{commit}..HEAD", "--", *paths)
+    if log.returncode != 0:
+        return "NO RECORD", [f"commit {commit} is not in this repository"]
+    commits = log.stdout.strip().splitlines()
+    if not commits:
+        return "IN SYNC", []
+    noun = "commit" if len(commits) == 1 else "commits"
+    return "CHANGED", [f"{len(commits)} {noun} since {commit}", *commits]
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return 0 if argv else 2
+    models = [model for argument in argv for model in models_in(argument)]
+    if not models:
+        print("usage: no model file found in the arguments", file=sys.stderr)
+        return 2
+    drifted = False
+    for model in models:
+        verdict, detail = status(model)
+        print(f"{verdict} {model}" + (f": {detail[0]}" if detail else ""))
+        for line in detail[1:]:
+            print(f"  {line}")
+        drifted = drifted or verdict != "IN SYNC"
+    return 1 if drifted else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

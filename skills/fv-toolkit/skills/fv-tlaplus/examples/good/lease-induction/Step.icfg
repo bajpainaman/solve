@@ -1,0 +1,8 @@
+\* expect: holds
+\* Step 2 of 3: StrongInv /\ Next => StrongInv'. INIT names StrongInv, not
+\* Init, so Apalache starts from any state that satisfies it, reachable or
+\* not, and takes one Next step.
+INIT StrongInv
+NEXT Next
+INV StrongInv
+LENGTH 1

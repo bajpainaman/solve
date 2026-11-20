@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# fv-install dst: check that a stdlib-only Python 3 is on PATH.
+#
+# A deterministic simulator is hand-written code that ships inside the
+# fv-dst skill, not a package to download or pin, so this installer has
+# nothing to fetch. --check and the no-argument form report the same state.
+#
+# Usage: installers/dst [--check]
+# Environment: FV_PYTHON (default python3).
+set -uo pipefail
+
+PY="${FV_PYTHON:-python3}"
+if ! command -v "$PY" >/dev/null 2>&1; then
+  echo "UNAVAILABLE dst: $PY is not on PATH; install Python 3.9 or later"
+  exit 3
+fi
+version="$("$PY" --version 2>&1)"
+echo "READY dst $version"

@@ -38,20 +38,45 @@ bin/check-updates                                      # compare pins with upstr
 npx skills add bajpainaman/solve
 ```
 
-That installs three skills side by side, for Claude Code, Codex, Amp, Cursor and 70+ other agents
+That installs eight skills side by side, for Claude Code, Codex, Amp, Cursor and 70+ other agents
 ([skills CLI](https://github.com/vercel-labs/skills)):
 
 | Skill | For |
 |---|---|
+| `skill-router` | Picks the skill for each request, holds a one-line catalog of every subskill, and suggests the next skill. Load it every session |
 | `solve` | Decisions with checked evidence, HTML artifacts, clear writing |
 | `cdpi` | [DPI thinking](https://github.com/bajpainaman/cdpi) as an engineering lens: rails, open specs, federation, +1 over rewrite |
 | `impeccable` | [Frontend design](https://github.com/pbakaus/impeccable) by Paul Bakaus (Apache-2.0), pinned |
+| `testing-toolkit` | [Which tests a change needs](https://github.com/aasimsani/testing-toolkit), and 17 subskills that write, audit and plan them (MIT), pinned |
+| `fv-toolkit` | [Formal checks](https://github.com/aasimsani/formal-verification-toolkit) of "never" and "always" claims with TLA+, Alloy, Z3, Hypothesis and 13 more tools (MIT), pinned |
+| `sdlc-toolkit` | [A gated feature lifecycle](https://github.com/aasimsani/sdlc-toolkit) from intent to maintain, 12 stage skills (MIT), pinned |
+| `pr-review` | [Headless, read-only PR review](https://github.com/aasimsani/pr-review) of a PR, a local branch or a review queue (MIT), pinned |
+
+Each toolkit installs as one skill. Its upstream subskills sit under `skills/<toolkit>/skills/` and load only when
+the toolkit's entry skill routes to them, so a session pays for one short catalog, not the whole collection.
 
 Pick one with `--skill cdpi`, add `-g` for a global install, or `-a claude-code` to pick an agent.
 The repository root also holds the development copy of solve. Its `SKILL.md` is marked
-`internal` so the CLI skips it and installs the three skills under `skills/`. `--skill solve` asks for it by
-name, so the CLI installs the whole development checkout instead; use `./install` for that copy. The plugin zip (`bin/build-plugin`) bundles the same three skills
-plus a `ROUTING.md` that picks one for each request.
+`internal` so the CLI skips it and installs the skills under `skills/`. `--skill solve` asks for it by
+name, so the CLI installs the whole development checkout instead; use `./install` for that copy. The plugin zip (`bin/build-plugin`) bundles the same skills
+plus a `ROUTING.md` that points at the router.
+
+### Upstream updates
+
+Every upstream is pinned to one commit in `sources.json`. Nothing updates itself, so an upstream change never
+reaches an agent before a person reads it.
+
+```bash
+bin/check-updates --force                    # which pins are behind upstream
+bin/vendor-sync fv-toolkit --review <ref>    # changed files; flags new skills, scripts, hooks, license changes
+# read the flagged files, set the new ref in sources.json
+bin/vendor-sync fv-toolkit                   # copy the pinned commit; refuses a changed license or a symlink
+bin/build-plugin --tree                      # regenerate skills/solve and the router catalog
+python3 -m unittest discover -s tests
+```
+
+html-artifact and CDPI's ai-skills publish no license, so they are fetched at their pins onto the user's machine
+(`bin/html-sync`, `cdpi sync`) and never committed.
 
 ## Quick start
 

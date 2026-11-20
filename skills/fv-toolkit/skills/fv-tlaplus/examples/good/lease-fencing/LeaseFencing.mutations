@@ -1,0 +1,18 @@
+# Planted bugs for the fencing design. Each one must make its property fail.
+run fv-tlc LeaseFencing.tla Fencing.cfg WitnessGranted.cfg
+properties StaleWriteRejected EventuallyGranted
+file LeaseFencing.tla
+
+mutation the grant records the old token instead of the fresh one
+detects StaleWriteRejected
+-     /\ storageToken' = IF Order = "fencing" THEN leaseToken + 1 ELSE storageToken
++     /\ storageToken' = IF Order = "fencing" THEN leaseToken ELSE storageToken
+
+mutation a lease that expires never gets granted to anyone
+detects EventuallyGranted
+-     /\ expired' = TRUE
++     /\ expired' = FALSE
+
+harmless a comment on the grant action
+- \* higher token. The fencing design records that token as the high mark now,
++ \* higher token. The fencing design records this token as the high mark now,

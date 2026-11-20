@@ -1,0 +1,1 @@
+check JitterNeverChangesTheAmount pricing.apply_jitter expect holds

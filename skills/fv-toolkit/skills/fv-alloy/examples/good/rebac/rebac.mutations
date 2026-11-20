@@ -1,0 +1,18 @@
+# Planted bugs for the ReBAC model. Each one must make the named check miss its expectation.
+run fv-alloy rebac.als
+properties NoUnintendedEditFromAncestorViewer_EditorChain NoUnintendedEditFromAncestorViewer_EditorOrViewerChain
+file rebac.als
+
+mutation the editor-chain rule also unions in viewer grants
+detects NoUnintendedEditFromAncestorViewer_EditorChain
+- fun editorsViaEditorChain[o: Object]: set User { o.*parent.editor }
++ fun editorsViaEditorChain[o: Object]: set User { o.*parent.editor + o.*parent.viewer }
+
+mutation the editor-or-viewer-chain rule drops the viewer term it was meant to demonstrate
+detects NoUnintendedEditFromAncestorViewer_EditorOrViewerChain
+- fun editorsViaEditorOrViewerChain[o: Object]: set User { o.*parent.editor + o.*parent.viewer }
++ fun editorsViaEditorOrViewerChain[o: Object]: set User { o.*parent.editor }
+
+harmless a comment on the parent field is reworded
+- parent: lone Object,  -- the folder a document sits in, or none for a folder at the top
++ parent: lone Object,  -- the containing folder, or none for a top-level folder

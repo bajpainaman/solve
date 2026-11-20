@@ -1,0 +1,21 @@
+# Planted bugs in the real checkout implementation. Each one must make the
+# conformance check against the guarded machine's shortest paths fail.
+run node run-paths.cjs --machine guarded
+properties ConformsToMachine
+file checkout.cjs
+
+mutation setting the payment flag is dropped
+detects ConformsToMachine
+-       this.hasPayment = true;
++
+
+mutation back from payment returns to the wrong step
+detects ConformsToMachine
+-     } else if (this.step === "payment" && eventType === "BACK") {
+-       this.step = "shipping";
++    } else if (this.step === "payment" && eventType === "BACK") {
++      this.step = "cart";
+
+harmless the header comment is reworded
+- // The real checkout flow. No XState at runtime; a plain class the browser
++ // The real checkout flow. The browser ships this class; nothing here runs XState.

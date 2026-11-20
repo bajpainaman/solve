@@ -1,0 +1,25 @@
+# Planted bugs in the three-step inductive proof. Each one must make its
+# property fail.
+run fv-apalache Lease.tla Init.icfg Step.icfg Safety.icfg
+properties StrongInv Safety
+file Lease.tla
+
+mutation Acquire no longer checks that the slot is free
+detects StrongInv
+-     /\ phase = "idle"
+-     /\ leases' = leases + 1
++     /\ leases' = leases + 1
+
+mutation Init starts with a lease already outstanding
+detects StrongInv
+- Init == leases = 0 /\ phase = "idle"
++ Init == leases = 1 /\ phase = "idle"
+
+mutation Safety is stated more strictly than StrongInv guarantees
+detects Safety
+- Safety == leases <= 1
++ Safety == leases <= 0
+
+harmless a comment on the inductive invariant
+- StrongInv == (phase = "idle" /\ leases = 0) \/ (phase = "held" /\ leases = 1)
++ StrongInv == (phase = "idle" /\ leases = 0) \/ (phase = "held" /\ leases = 1)  \* the two fields agree

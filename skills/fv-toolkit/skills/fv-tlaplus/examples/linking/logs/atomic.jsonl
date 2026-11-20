@@ -1,0 +1,5 @@
+{"event": "init", "vars": {"refunded": 0}}
+{"event": "check", "job": "a", "vars": {"refunded": 0}}
+{"event": "check", "job": "b", "vars": {"refunded": 0}}
+{"event": "refund", "job": "a", "vars": {"refunded": 10}}
+{"event": "refund", "job": "b", "vars": {"refunded": 10}}

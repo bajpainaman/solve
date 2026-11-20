@@ -1,0 +1,18 @@
+# Planted bugs in the items API. Each one must make the named test fail.
+run python -m pytest -q -p no:cacheprovider test_items.py
+properties test_schema_conformance test_create_get_delete_workflow
+file app.py
+
+mutation delete does not remove the item
+detects test_create_get_delete_workflow
+-             ITEMS.pop(item_id, None)
++             pass
+
+mutation the name field accepts anything truthy, not just a string
+detects test_schema_conformance
+-         if not isinstance(body, dict) or not isinstance(body.get("name"), str) or not body["name"]:
++         if not isinstance(body, dict) or not body.get("name"):
+
+harmless a comment is reworded
+- """Serve the schema and the three item operations from one in-memory dict."""
++ """Dispatch each request by path and method against one in-memory dict."""

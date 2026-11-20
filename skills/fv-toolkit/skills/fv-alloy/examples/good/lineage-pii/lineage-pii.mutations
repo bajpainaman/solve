@@ -1,0 +1,26 @@
+# Planted bugs for the lineage model. Each one must make the named check miss its expectation.
+run fv-alloy lineage-pii.als
+properties NoUnmaskedPIIAtASink_MaskingCoversLineage NoUnmaskedPIIAtASink_MaskingCoversDirectPIIOnly
+file lineage-pii.als
+
+mutation the lineage rule masks only the columns tagged PII and stops following transforms
+detects NoUnmaskedPIIAtASink_MaskingCoversLineage
+- pred MaskingCoversLineage {
+-   all s: Sink, c: Column | (c in s.exposes and DerivedFromPII[c]) implies c in s.masked
+- }
++ pred MaskingCoversLineage {
++   all s: Sink, c: Column | (c in s.exposes and c in PIIColumn) implies c in s.masked
++ }
+
+mutation the direct-only rule is widened to cover lineage, so it no longer demonstrates the gap
+detects NoUnmaskedPIIAtASink_MaskingCoversDirectPIIOnly
+- pred MaskingCoversDirectPIIOnly {
+-   all s: Sink, c: Column | (c in s.exposes and c in PIIColumn) implies c in s.masked
+- }
++ pred MaskingCoversDirectPIIOnly {
++   all s: Sink, c: Column | (c in s.exposes and DerivedFromPII[c]) implies c in s.masked
++ }
+
+harmless a comment on PIIColumn is reworded
+- sig PIIColumn in Column {}  -- columns that directly hold PII, such as email or ssn
++ sig PIIColumn in Column {}  -- columns holding PII in the clear, e.g. email, ssn

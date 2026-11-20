@@ -31,7 +31,7 @@ class PluginPackageTests(unittest.TestCase):
         result = plugin.inspect_archive(archive)
         self.assertEqual(result["gates"], 28)
         self.assertEqual(result["templates"], 32)
-        self.assertEqual(result["skills"], ["solve", "cdpi", "impeccable"])
+        self.assertEqual(result["skills"], ["solve", *plugin.SIBLINGS])
         self.assertIn("ROUTING.md", self.entries)
         self.assertLess(result["entry_words"], 700)
         with zipfile.ZipFile(io.BytesIO(archive)) as opened:

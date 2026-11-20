@@ -1,0 +1,20 @@
+# Planted bugs in split_evenly. Each one must make the named command miss its expectation.
+run fv-crosshair money.crosshair
+properties SplitEvenlyHoldsItsContract RefactorPreservesOutput
+file money.py
+
+mutation one share is dropped from the result
+detects SplitEvenlyHoldsItsContract
+-     return [base + 1 if i < extra else base for i in range(parts)]
++     return [base + 1 if i < extra else base for i in range(parts - 1)]
+
+mutation the extra cents move to the last shares instead of the first, outside the diff
+detects RefactorPreservesOutput
+-     base, extra = divmod(total, parts)
+-     return [base + 1 if i < extra else base for i in range(parts)]
++     base, extra = divmod(total, parts)
++     return [base + 1 if i >= parts - extra else base for i in range(parts)]
+
+harmless a comment is reworded
+- """The same split, written as an explicit loop instead of a comprehension."""
++ """The same split, written out as a loop so each cent assignment is a separate step."""

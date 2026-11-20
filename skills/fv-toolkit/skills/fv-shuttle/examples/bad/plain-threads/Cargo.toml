@@ -1,0 +1,9 @@
+[package]
+name = "fv-shuttle-plain-threads"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "plain_threads"
+path = "src/lib.rs"
